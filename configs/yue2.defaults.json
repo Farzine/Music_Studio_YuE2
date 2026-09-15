@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "description": "Default GenerationConfig. Loaded at runtime; not compiled into the code.",
+  "config": {
+    "model": {
+      "checkpoint": "",
+      "revision": null,
+      "vae": "standard",
+      "vae_revision": null,
+      "compute_backend": "torch",
+      "quantization": "none",
+      "offload_ar": false,
+      "memory_budget_gib": 40.0,
+      "local_files_only": true
+    },
+    "prompt": {"style": "", "lyrics": "", "abc": "", "mode": "full"},
+    "planner": {
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "top_k": 30,
+      "repetition_penalty": 1.005,
+      "penalty_window": 100,
+      "min_tokens": 32,
+      "max_tokens": 4096,
+      "seed": null
+    },
+    "sampling": {
+      "seed": 831001,
+      "control_after_generate": "fixed",
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 100,
+      "repetition_penalty": 1.2,
+      "penalty_window": 50,
+      "min_tokens": 200,
+      "max_duration_seconds": 360.0,
+      "max_tokens_override": null
+    },
+    "synthesis": {
+      "cfg_scale": null,
+      "ode_steps": 32,
+      "ode_method": "midpoint",
+      "sampler_name": null,
+      "scheduler": null,
+      "denoise": null,
+      "seconds": null,
+      "batch_size": null
+    },
+    "decoder": {"mode": "tiled", "tile_frames": 1024, "halo_frames": 16},
+    "output": {"format": "flac", "filename_prefix": "YuE2", "keep_canonical": true}
+  }
+}

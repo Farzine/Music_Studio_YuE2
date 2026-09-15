@@ -1,0 +1,782 @@
+{
+  "schema_version": 1,
+  "source_workflow": "yue2_full.json",
+  "workflow_id": "9bb514c4-2d77-4cac-82f3-fb5dca2632d5",
+  "workflow_version": 0.4,
+  "frontend_version": "1.51.10",
+  "node_count": 17,
+  "link_count": 20,
+  "notes": "Reference only. The native YuE2 runtime is the primary backend; entries whose native.supported is false exist in the ComfyUI graph and have no native equivalent.",
+  "nodes": [
+    {
+      "id": 5,
+      "type": "EmptyYuE2LatentAudio",
+      "title": null,
+      "bypassed": false,
+      "widgets": {
+        "seconds": 120,
+        "batch_size": 1
+      }
+    },
+    {
+      "id": 8,
+      "type": "KSampler",
+      "title": null,
+      "bypassed": false,
+      "widgets": {
+        "seed": 7,
+        "control_after_generate": "fixed",
+        "steps": 32,
+        "cfg": 1,
+        "sampler_name": "dpm_2",
+        "scheduler": "sgm_uniform",
+        "denoise": 1
+      }
+    },
+    {
+      "id": 9,
+      "type": "VAEDecodeAudio",
+      "title": null,
+      "bypassed": false,
+      "widgets": {}
+    },
+    {
+      "id": 10,
+      "type": "SaveAudioAdvanced",
+      "title": null,
+      "bypassed": false,
+      "widgets": {
+        "filename_prefix": "audio/YuE2",
+        "format": "flac"
+      }
+    },
+    {
+      "id": 12,
+      "type": "PrimitiveNode",
+      "title": "style",
+      "bypassed": false,
+      "widgets": {
+        "value": "violin with girl singing jpop anime"
+      }
+    },
+    {
+      "id": 13,
+      "type": "PrimitiveNode",
+      "title": "lyrics",
+      "bypassed": false,
+      "widgets": {
+        "value": "[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n\n[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n\n[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n"
+      }
+    },
+    {
+      "id": 14,
+      "type": "PreviewAny",
+      "title": null,
+      "bypassed": false,
+      "widgets": {}
+    },
+    {
+      "id": 15,
+      "type": "CheckpointLoaderSimple",
+      "title": null,
+      "bypassed": false,
+      "widgets": {
+        "ckpt_name": "yue2_convrot_int8.safetensors"
+      }
+    },
+    {
+      "id": 17,
+      "type": "VAEDecodeAudioTiled",
+      "title": null,
+      "bypassed": false,
+      "widgets": {
+        "tile_size": 1920,
+        "overlap": 128
+      }
+    },
+    {
+      "id": 18,
+      "type": "AudioEncoderLoader",
+      "title": null,
+      "bypassed": true,
+      "widgets": {
+        "audio_encoder_name": "sheetsage2_bf16.safetensors"
+      }
+    },
+    {
+      "id": 19,
+      "type": "SheetSage2AudioToABC",
+      "title": null,
+      "bypassed": true,
+      "widgets": {
+        "mode": "melody"
+      }
+    },
+    {
+      "id": 20,
+      "type": "LoadAudio",
+      "title": null,
+      "bypassed": true,
+      "widgets": {
+        "audio": "test_ref.wav",
+        "upload": null
+      }
+    },
+    {
+      "id": 21,
+      "type": "PreviewAny",
+      "title": null,
+      "bypassed": true,
+      "widgets": {}
+    },
+    {
+      "id": 22,
+      "type": "YuE2GenerateMusic",
+      "title": null,
+      "bypassed": false,
+      "widgets": {
+        "style": "violin with girl singing jpop anime",
+        "lyrics": "[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n\n[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n\n[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n",
+        "abc": "",
+        "seed": 17,
+        "control_after_generate": "fixed",
+        "mode": "full",
+        "max_duration": 360,
+        "temperature": 1,
+        "top_p": 0.95,
+        "top_k": 100,
+        "repetition_penalty": 1.2
+      }
+    },
+    {
+      "id": 23,
+      "type": "YuE2GenerateABC",
+      "title": null,
+      "bypassed": false,
+      "widgets": {
+        "style": "violin with girl singing jpop anime",
+        "lyrics": "[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n\n[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n\n[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n",
+        "seed": 10,
+        "control_after_generate": "fixed",
+        "mode": "full",
+        "max_abc_tokens": 8192
+      }
+    },
+    {
+      "id": 25,
+      "type": "Note",
+      "title": null,
+      "bypassed": false,
+      "widgets": {
+        "text": "If your GPU has enough vram use the regular VAE decode for faster decoding."
+      }
+    },
+    {
+      "id": 26,
+      "type": "Note",
+      "title": null,
+      "bypassed": false,
+      "widgets": {
+        "text": "The cover feature works by using these nodes to convert an audio file to ABC music notation and then feeding it to the Yue2 Generate Music node."
+      }
+    }
+  ],
+  "parameters": [
+    {
+      "parameter": "prompt.style",
+      "label": "Style",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "request.style"
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "style",
+      "comfy_note": null,
+      "workflow_value": "violin with girl singing jpop anime"
+    },
+    {
+      "parameter": "prompt.lyrics",
+      "label": "Lyrics",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "request.lyrics"
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "lyrics",
+      "comfy_note": null,
+      "workflow_value": "[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n\n[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n\n[verse]\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\nfluff the fluffy tail\n"
+    },
+    {
+      "parameter": "prompt.mode",
+      "label": "Mode",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "request.cot"
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "mode",
+      "comfy_note": null,
+      "workflow_value": "full"
+    },
+    {
+      "parameter": "prompt.abc",
+      "label": "ABC score",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "request.abc"
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "abc",
+      "comfy_note": null,
+      "workflow_value": ""
+    },
+    {
+      "parameter": "model.checkpoint",
+      "label": "Model",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "from_pretrained(model=...)"
+      },
+      "comfy_node_type": "CheckpointLoaderSimple",
+      "comfy_widget": "ckpt_name",
+      "comfy_note": "ComfyUI packages the model as a single .safetensors checkpoint; the native runtime loads a model directory.",
+      "workflow_value": "yue2_convrot_int8.safetensors"
+    },
+    {
+      "parameter": "model.revision",
+      "label": "Model revision",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "from_pretrained(revision=...)"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "model.vae",
+      "label": "Decoder weights",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "from_pretrained(vae=...)"
+      },
+      "comfy_node_type": "CheckpointLoaderSimple",
+      "comfy_widget": null,
+      "comfy_note": "The workflow takes the VAE from the same checkpoint.",
+      "workflow_value": null
+    },
+    {
+      "parameter": "model.vae_revision",
+      "label": "Decoder revision",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "from_pretrained(vae_revision=...)"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "model.compute_backend",
+      "label": "Compute backend",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "YuE2Pipeline(backend=...)"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "model.quantization",
+      "label": "Quantization",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "YuE2Pipeline(quantization=...)"
+      },
+      "comfy_node_type": "CheckpointLoaderSimple",
+      "comfy_widget": "ckpt_name",
+      "comfy_note": "ComfyUI selects precision by choosing a different checkpoint file, e.g. yue2_convrot_int8.safetensors.",
+      "workflow_value": "yue2_convrot_int8.safetensors"
+    },
+    {
+      "parameter": "model.offload_ar",
+      "label": "Offload AR weights during synthesis",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "YuE2Pipeline(offload_ar=...)"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "model.memory_budget_gib",
+      "label": "GPU memory budget (GiB)",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "YuE2Pipeline(memory_budget_gib=...)"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "model.local_files_only",
+      "label": "Offline (local files only)",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "from_pretrained(local_files_only=...)"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "planner.temperature",
+      "label": "Planner temperature",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.abc.temperature"
+      },
+      "comfy_node_type": "YuE2GenerateABC",
+      "comfy_widget": null,
+      "comfy_note": "Not exposed as a widget in the reference workflow.",
+      "workflow_value": null
+    },
+    {
+      "parameter": "planner.top_p",
+      "label": "Planner top-p",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.abc.top_p"
+      },
+      "comfy_node_type": "YuE2GenerateABC",
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "planner.top_k",
+      "label": "Planner top-k",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.abc.top_k"
+      },
+      "comfy_node_type": "YuE2GenerateABC",
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "planner.repetition_penalty",
+      "label": "Planner repetition penalty",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.abc.repetition_penalty"
+      },
+      "comfy_node_type": "YuE2GenerateABC",
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "planner.penalty_window",
+      "label": "Planner penalty window",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.abc.penalty_window"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "planner.min_tokens",
+      "label": "Planner minimum tokens",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.abc.min_tokens"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "planner.max_tokens",
+      "label": "ABC max tokens",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.abc.max_tokens"
+      },
+      "comfy_node_type": "YuE2GenerateABC",
+      "comfy_widget": "max_abc_tokens",
+      "comfy_note": null,
+      "workflow_value": 8192
+    },
+    {
+      "parameter": "planner.seed",
+      "label": "Planner seed",
+      "kind": "workflow",
+      "native": {
+        "supported": false,
+        "path": null,
+        "note": "The native pipeline derives both the plan and the acoustic tokens from one request seed (yue2.protocol.SongRequest.seed). Use Generation seed instead."
+      },
+      "comfy_node_type": "YuE2GenerateABC",
+      "comfy_widget": "seed",
+      "comfy_note": null,
+      "workflow_value": 10
+    },
+    {
+      "parameter": "sampling.seed",
+      "label": "Seed",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "request.seed"
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "seed",
+      "comfy_note": null,
+      "workflow_value": 17
+    },
+    {
+      "parameter": "sampling.control_after_generate",
+      "label": "Seed behaviour",
+      "kind": "app",
+      "native": {
+        "supported": true,
+        "path": null,
+        "note": "Resolved by the studio; the runtime only ever sees a concrete seed."
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "control_after_generate",
+      "comfy_note": null,
+      "workflow_value": "fixed"
+    },
+    {
+      "parameter": "sampling.temperature",
+      "label": "Temperature",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.semantic.temperature"
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "temperature",
+      "comfy_note": null,
+      "workflow_value": 1
+    },
+    {
+      "parameter": "sampling.top_p",
+      "label": "Top-p",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.semantic.top_p"
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "top_p",
+      "comfy_note": null,
+      "workflow_value": 0.95
+    },
+    {
+      "parameter": "sampling.top_k",
+      "label": "Top-k",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.semantic.top_k"
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "top_k",
+      "comfy_note": null,
+      "workflow_value": 100
+    },
+    {
+      "parameter": "sampling.repetition_penalty",
+      "label": "Repetition penalty",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.semantic.repetition_penalty"
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "repetition_penalty",
+      "comfy_note": null,
+      "workflow_value": 1.2
+    },
+    {
+      "parameter": "sampling.penalty_window",
+      "label": "Penalty window",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.semantic.penalty_window"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "sampling.min_tokens",
+      "label": "Minimum tokens",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.semantic.min_tokens"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "sampling.max_duration_seconds",
+      "label": "Maximum duration",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.semantic.max_tokens",
+        "note": "Converted to tokens with the VAE's 25 frames per second (sample_rate 48000 / downsampling_ratio 1920)."
+      },
+      "comfy_node_type": "YuE2GenerateMusic",
+      "comfy_widget": "max_duration",
+      "comfy_note": null,
+      "workflow_value": 360
+    },
+    {
+      "parameter": "sampling.max_tokens_override",
+      "label": "Semantic max tokens (override)",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.semantic.max_tokens"
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
+      "parameter": "synthesis.cfg_scale",
+      "label": "Guidance (CFG)",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "request.cfg_scale"
+      },
+      "comfy_node_type": "KSampler",
+      "comfy_widget": "cfg",
+      "comfy_note": null,
+      "workflow_value": 1
+    },
+    {
+      "parameter": "synthesis.ode_steps",
+      "label": "Synthesis steps",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.ode_steps"
+      },
+      "comfy_node_type": "KSampler",
+      "comfy_widget": "steps",
+      "comfy_note": null,
+      "workflow_value": 32
+    },
+    {
+      "parameter": "synthesis.ode_method",
+      "label": "Solver",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "generation.ode_method",
+        "note": "yue2.protocol.GenerationConfig rejects any other solver."
+      },
+      "comfy_node_type": "KSampler",
+      "comfy_widget": "sampler_name",
+      "comfy_note": "ComfyUI's sampler list is a different mechanism and does not map onto this.",
+      "workflow_value": "dpm_2"
+    },
+    {
+      "parameter": "synthesis.sampler_name",
+      "label": "Sampler",
+      "kind": "workflow",
+      "native": {
+        "supported": false,
+        "path": null,
+        "note": "The native runtime solves the flow-matching ODE with a fixed midpoint solver and has no sampler list. Use Synthesis steps instead."
+      },
+      "comfy_node_type": "KSampler",
+      "comfy_widget": "sampler_name",
+      "comfy_note": null,
+      "workflow_value": "dpm_2"
+    },
+    {
+      "parameter": "synthesis.scheduler",
+      "label": "Scheduler",
+      "kind": "workflow",
+      "native": {
+        "supported": false,
+        "path": null,
+        "note": "No native equivalent: the solver uses a uniform midpoint schedule."
+      },
+      "comfy_node_type": "KSampler",
+      "comfy_widget": "scheduler",
+      "comfy_note": null,
+      "workflow_value": "sgm_uniform"
+    },
+    {
+      "parameter": "synthesis.denoise",
+      "label": "Denoise",
+      "kind": "workflow",
+      "native": {
+        "supported": false,
+        "path": null,
+        "note": "The native pipeline always solves the full trajectory; there is no partial-denoise entry point."
+      },
+      "comfy_node_type": "KSampler",
+      "comfy_widget": "denoise",
+      "comfy_note": null,
+      "workflow_value": 1
+    },
+    {
+      "parameter": "synthesis.seconds",
+      "label": "Latent length (seconds)",
+      "kind": "workflow",
+      "native": {
+        "supported": false,
+        "path": null,
+        "note": "The native pipeline sizes latents from the acoustic tokens the model actually emitted, so there is nothing to preallocate. Use Maximum duration."
+      },
+      "comfy_node_type": "EmptyYuE2LatentAudio",
+      "comfy_widget": "seconds",
+      "comfy_note": null,
+      "workflow_value": 120
+    },
+    {
+      "parameter": "synthesis.batch_size",
+      "label": "Batch size",
+      "kind": "workflow",
+      "native": {
+        "supported": false,
+        "path": null,
+        "note": "One pipeline call produces one candidate. Queue several generations to get variations."
+      },
+      "comfy_node_type": "EmptyYuE2LatentAudio",
+      "comfy_widget": "batch_size",
+      "comfy_note": null,
+      "workflow_value": 1
+    },
+    {
+      "parameter": "decoder.mode",
+      "label": "Decoder mode",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "decode(full=...)"
+      },
+      "comfy_node_type": "VAEDecodeAudioTiled",
+      "comfy_widget": null,
+      "comfy_note": "ComfyUI models this as two separate nodes, VAEDecodeAudio and VAEDecodeAudioTiled.",
+      "workflow_value": null
+    },
+    {
+      "parameter": "decoder.tile_frames",
+      "label": "Tile size (latent frames)",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "YuE2Pipeline(vae_core_frames=...)"
+      },
+      "comfy_node_type": "VAEDecodeAudioTiled",
+      "comfy_widget": "tile_size",
+      "comfy_note": "The workflow's 1920 is the VAE downsampling ratio, not this frame count.",
+      "workflow_value": 1920
+    },
+    {
+      "parameter": "decoder.halo_frames",
+      "label": "Tile overlap (latent frames)",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "decode_tiled(halo_frames=16)",
+        "note": "Not configurable: yue2.pipeline.decode always passes 16."
+      },
+      "comfy_node_type": "VAEDecodeAudioTiled",
+      "comfy_widget": "overlap",
+      "comfy_note": null,
+      "workflow_value": 128
+    },
+    {
+      "parameter": "output.format",
+      "label": "Format",
+      "kind": "post",
+      "native": {
+        "supported": true,
+        "path": "SongResult.save(path)"
+      },
+      "comfy_node_type": "SaveAudioAdvanced",
+      "comfy_widget": "format",
+      "comfy_note": null,
+      "workflow_value": "flac"
+    },
+    {
+      "parameter": "output.filename_prefix",
+      "label": "Filename prefix",
+      "kind": "app",
+      "native": {
+        "supported": true,
+        "path": null,
+        "note": "Applied by the studio when a file is downloaded."
+      },
+      "comfy_node_type": "SaveAudioAdvanced",
+      "comfy_widget": "filename_prefix",
+      "comfy_note": null,
+      "workflow_value": "audio/YuE2"
+    },
+    {
+      "parameter": "output.keep_canonical",
+      "label": "Keep the lossless master",
+      "kind": "post",
+      "native": {
+        "supported": true,
+        "path": null
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    }
+  ]
+}

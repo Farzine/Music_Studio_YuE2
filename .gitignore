@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv*/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Local runtime state
+.env
+.env.local
+data/
+models/
+logs/
+outputs/
+runs/
+
+# OS
+.DS_Store
+
+# Build and tool caches
+.pytest_cache/
+*.egg-info/
+*.tsbuildinfo

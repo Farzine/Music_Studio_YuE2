@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "description": "Static capability declarations merged with what the worker actually probes at runtime. A feature is only offered in the UI when the active backend advertises it.",
+  "backends": {
+    "native": {
+      "label": "YuE2 native runtime",
+      "modes": ["full", "melody", "off", "score_edit"],
+      "capabilities": {
+        "cover": {"supported": false, "reason": "Requires the SheetSage2 transcription worker, which is not installed."},
+        "score_edit": {"supported": true},
+        "external_abc": {"supported": true},
+        "vae_legacy": {"supported": false, "reason": "m-a-p/YuE2-Vae-legacy is not present locally."},
+        "backend_vllm": {"supported": false, "reason": "Install the optional 'fast' extras (vllm, triton) to enable it."},
+        "quantization_fp8": {"supported": true},
+        "output_mp3": {"supported": false, "reason": "FFmpeg was not found on PATH."},
+        "cancellation": {"supported": true, "note": "Cooperative: the worker stops at the next safe boundary."},
+        "token_progress": {"supported": true},
+        "latent_reuse": {"supported": true}
+      }
+    },
+    "mock": {
+      "label": "Mock backend (no GPU)",
+      "modes": ["full", "melody", "off", "score_edit"],
+      "capabilities": {
+        "cover": {"supported": false, "reason": "The mock backend does not transcribe audio."},
+        "score_edit": {"supported": true},
+        "external_abc": {"supported": true},
+        "vae_legacy": {"supported": false, "reason": "Not applicable to the mock backend."},
+        "backend_vllm": {"supported": false, "reason": "Not applicable to the mock backend."},
+        "quantization_fp8": {"supported": false, "reason": "Not applicable to the mock backend."},
+        "output_mp3": {"supported": false, "reason": "FFmpeg was not found on PATH."},
+        "cancellation": {"supported": true},
+        "token_progress": {"supported": true},
+        "latent_reuse": {"supported": false, "reason": "The mock backend produces no latents."}
+      }
+    },
+    "comfy": {
+      "label": "ComfyUI workflow (compatibility layer)",
+      "modes": ["full", "melody", "off"],
+      "capabilities": {
+        "cover": {"supported": false, "reason": "Needs SheetSage2 nodes and the sheetsage2 audio encoder in ComfyUI."},
+        "score_edit": {"supported": true},
+        "external_abc": {"supported": true},
+        "vae_legacy": {"supported": false, "reason": "The workflow decodes with the VAE bundled in the checkpoint."},
+        "backend_vllm": {"supported": false, "reason": "Not applicable."},
+        "quantization_fp8": {"supported": false, "reason": "ComfyUI selects precision through the checkpoint file."},
+        "output_mp3": {"supported": false, "reason": "FFmpeg was not found on PATH."},
+        "cancellation": {"supported": false, "reason": "Queued ComfyUI prompts are interrupted, not cancelled at a token boundary."},
+        "token_progress": {"supported": false, "reason": "ComfyUI reports node-level progress only."},
+        "latent_reuse": {"supported": false}
+      }
+    }
+  }
+}

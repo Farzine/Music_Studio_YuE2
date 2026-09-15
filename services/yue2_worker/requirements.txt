@@ -1,0 +1,16 @@
+# Installed by scripts/setup_yue2_env.sh into .venv-yue2.
+# torch is installed separately from the cu126 index to match the driver.
+torch==2.10.0
+transformers==4.57.6
+huggingface-hub==0.36.2
+safetensors==0.7.0
+tiktoken==0.12.0
+numpy==2.2.6
+soundfile==0.13.1
+accelerate==1.13.0
+# yue2-infer is not published on PyPI; it is installed from the repository:
+#   git+https://github.com/multimodal-art-projection/YuE.git  (pinned to 0.1.6)
+yue2-infer==0.1.6
+pydantic>=2.9,<3
+pydantic-settings>=2.5,<3
+nvidia-ml-py>=12.560

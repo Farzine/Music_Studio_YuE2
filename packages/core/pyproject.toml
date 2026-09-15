@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yue2-studio-core"
+version = "0.1.0"
+description = "Shared domain, parameter registry and filesystem store for YuE2 Music Studio"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.5,<3",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["yue2_studio_core*"]

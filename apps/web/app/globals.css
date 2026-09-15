@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Dark-first studio palette. One accent, generous neutrals, no gradients doing
+   the work of hierarchy.
+--------------------------------------------------------------------------- */
+@theme {
+  --color-canvas: oklch(0.16 0.012 275);
+  --color-surface: oklch(0.2 0.014 275);
+  --color-surface-2: oklch(0.245 0.016 275);
+  --color-line: oklch(0.31 0.018 275);
+  --color-ink: oklch(0.97 0.004 275);
+  --color-ink-muted: oklch(0.72 0.014 275);
+  --color-ink-faint: oklch(0.56 0.014 275);
+  --color-accent: oklch(0.72 0.17 152);
+  --color-accent-ink: oklch(0.18 0.03 152);
+  --color-warn: oklch(0.79 0.15 78);
+  --color-danger: oklch(0.66 0.19 22);
+  --color-info: oklch(0.72 0.13 245);
+
+  --radius-card: 1rem;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html,
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keyboard users must always see where they are. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--color-accent) 40%, transparent);
+}
+
+/* Scrollbars that do not shout. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface-2);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--color-ink) 6%, transparent),
+    transparent
+  );
+  animation: shimmer 1.6s infinite;
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-accent) 45%, transparent); }
+  70% { box-shadow: 0 0 0 10px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.pulse-ring { animation: pulse-ring 2s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

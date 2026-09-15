@@ -1,0 +1,10 @@
+# Pinned: the API process must stay reproducible and must not pull in torch.
+fastapi==0.120.4
+uvicorn[standard]==0.41.0
+pydantic==2.12.4
+pydantic-settings==2.13.0
+python-multipart==0.0.20
+nvidia-ml-py==13.580.82
+soundfile==0.13.1
+httpx==0.28.1
+sse-starlette==3.0.2

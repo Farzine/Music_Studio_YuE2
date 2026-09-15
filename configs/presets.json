@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "description": "Built-in presets. A preset is a partial GenerationConfig merged over the defaults; there is no hidden preset logic.",
+  "presets": [
+    {
+      "id": "preset_balanced",
+      "name": "Balanced",
+      "description": "The runtime's validated settings. Start here.",
+      "overrides": {}
+    },
+    {
+      "id": "preset_high_quality",
+      "name": "High Quality",
+      "description": "More solver steps and a whole-song decode. Uses the A6000's headroom for quality over speed.",
+      "overrides": {
+        "synthesis": {"ode_steps": 64},
+        "decoder": {"mode": "full"},
+        "model": {"quantization": "none"}
+      }
+    },
+    {
+      "id": "preset_fast_preview",
+      "name": "Fast Preview",
+      "description": "Short sketch for checking a style or lyric idea. Not representative of final quality.",
+      "overrides": {
+        "sampling": {"max_duration_seconds": 60.0},
+        "synthesis": {"ode_steps": 16},
+        "planner": {"max_tokens": 2048},
+        "decoder": {"mode": "tiled", "tile_frames": 512}
+      }
+    },
+    {
+      "id": "preset_low_vram",
+      "name": "Low VRAM",
+      "description": "For sharing the GPU with another process: smaller budget, offloaded AR weights, small decoder tiles.",
+      "overrides": {
+        "model": {"memory_budget_gib": 24.0, "offload_ar": true},
+        "decoder": {"mode": "tiled", "tile_frames": 512}
+      }
+    }
+  ]
+}
