@@ -9,7 +9,7 @@ WEB         := $(ROOT)/apps/web
 
 .DEFAULT_GOAL := help
 .PHONY: help install install-api install-worker install-web models env \
-        dev backend worker frontend test test-unit test-integration test-worker mapping \
+        dev backend worker frontend test test-unit test-integration test-worker mapping cover \
         smoke-test lint format typecheck clean-data stop
 
 help: ## Show this help
@@ -32,6 +32,9 @@ install-web: ## Install frontend dependencies
 
 mapping: ## Regenerate configs/workflow-mapping.json from the registry + workflow
 	python3 scripts/generate_workflow_mapping.py
+
+cover: ## Install the cover workflow (FFmpeg 7, SheetSage2, MERT, .venv-sheetsage2)
+	./scripts/setup_cover.sh
 
 models: ## Download YuE2-3B and YuE2-Vae into ./models
 	./scripts/download_models.sh

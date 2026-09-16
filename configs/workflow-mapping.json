@@ -235,6 +235,20 @@
       "workflow_value": ""
     },
     {
+      "parameter": "prompt.reference_upload_id",
+      "label": "Reference audio",
+      "kind": "model",
+      "native": {
+        "supported": true,
+        "path": "SheetSage2 -> request.abc",
+        "note": "Transcribed by the SheetSage2 service, then supplied to YuE2 as the planner input."
+      },
+      "comfy_node_type": "LoadAudio",
+      "comfy_widget": "audio",
+      "comfy_note": "The workflow reads a file from ComfyUI's input directory; the studio uses an upload.",
+      "workflow_value": "test_ref.wav"
+    },
+    {
       "parameter": "model.checkpoint",
       "label": "Model",
       "kind": "model",

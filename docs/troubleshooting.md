@@ -27,14 +27,24 @@ leaves the next move to you.
 
 What actually helps, roughly in order:
 
-1. **Lower Maximum duration.** Memory scales with song length more than anything
+1. **Check you are on the right GPU.** On a shared machine the default card is
+   often the busy one. The System page lists every GPU with its free memory and
+   how much other processes are holding; pick a free one there. The change
+   applies to the next job.
+
+   Note that `CUDA_VISIBLE_DEVICES` in `.env` does **not** do this. That file is
+   read into the application's settings, not exported into the worker's
+   environment, so setting it there has no effect on which card CUDA uses. Use
+   the System page, or export the variable in the worker's shell.
+
+2. **Lower Maximum duration.** Memory scales with song length more than anything
    else.
-2. **Use the tiled decoder.** Whole-song decoding holds the entire waveform. A
+3. **Use the tiled decoder.** Whole-song decoding holds the entire waveform. A
    30-second generation peaks around 7.2 GiB on an A6000; a long whole-song
    decode is where headroom disappears.
-3. **Reduce the decoder tile size** — 1024 → 512 frames.
-4. **Enable Offload AR weights.** Slower, noticeably lower peak.
-5. **Lower the GPU memory budget** so the process reserves less, if something
+4. **Reduce the decoder tile size** — 1024 → 512 frames.
+5. **Enable Offload AR weights.** Slower, noticeably lower peak.
+6. **Lower the GPU memory budget** so the process reserves less, if something
    else is sharing the card.
 
 The pre-flight warning on the Create screen is an estimate from free VRAM and
@@ -105,9 +115,23 @@ is off and `/system` says why. The bf16 preset is the quality default anyway.
 
 ## Cover mode is disabled
 
-It needs SheetSage2 and FFmpeg 6.1+. See [cover-workflow.md](cover-workflow.md).
-The mode stays disabled with the reason attached rather than failing at
-generation time.
+Run `make cover`. It installs a private FFmpeg 7, the SheetSage2 weights, the
+MERT encoder and a separate environment; the System page names whichever of
+those is missing. See [cover-workflow.md](cover-workflow.md).
+
+## A cover failed to transcribe
+
+The error is `AUDIO_INPUT_ERROR` and carries the transcriber's own reason. The
+full report is kept next to the generation at
+`score/transcription/transcription.json`. A dense mix transcribes poorly; a
+recording with a clear, prominent melody works best.
+
+## The model selector will not open
+
+Fixed. It was caused by an option whose value was the empty string, which a
+select control reserves for "nothing selected". The default entry now uses an
+explicit `default` sentinel, the component refuses an empty value outright in
+development, and a test asserts no option the API serves can carry one.
 
 ## MP3 is unavailable
 

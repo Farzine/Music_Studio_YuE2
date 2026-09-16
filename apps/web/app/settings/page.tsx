@@ -30,13 +30,13 @@ export default function SettingsPage() {
             Edit that file and restart the API and the worker to change them.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {Object.entries(system.app).map(([key, value]) => (
-            <div key={key} className="rounded-xl border border-[var(--color-line)] p-3">
+            <div key={key} className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-line)] p-3">
               <p className="text-xs uppercase tracking-wide text-[var(--color-ink-faint)]">
                 {key.replace(/_/g, " ")}
               </p>
-              <p className="mt-1 break-all font-mono text-sm">{String(value ?? "—")}</p>
+              <p className="mt-1 break-all font-mono text-xs leading-relaxed">{String(value ?? "—")}</p>
             </div>
           ))}
         </CardContent>
@@ -51,11 +51,11 @@ export default function SettingsPage() {
           {capabilities.models.map((model) => (
             <div
               key={model.id}
-              className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--color-line)] p-3"
+              className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] p-3"
             >
               <Badge tone={model.present ? "accent" : "warn"}>{model.present ? "present" : "missing"}</Badge>
               <span className="text-sm">{model.label}</span>
-              <span className="font-mono text-xs text-[var(--color-ink-faint)]">{model.id}</span>
+              <span className="min-w-0 break-all font-mono text-xs text-[var(--color-ink-faint)]">{model.id}</span>
               {model.bytes ? (
                 <span className="ml-auto text-xs text-[var(--color-ink-faint)]">{formatBytes(model.bytes)}</span>
               ) : null}
@@ -76,7 +76,7 @@ export default function SettingsPage() {
           {(presets?.items ?? []).map((preset) => (
             <div
               key={preset.id}
-              className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--color-line)] p-3"
+              className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] p-3"
             >
               <span className="text-sm font-medium">{preset.name}</span>
               {preset.builtin ? <Badge>built-in</Badge> : null}

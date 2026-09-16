@@ -62,6 +62,16 @@ Downloads `m-a-p/YuE2-3B` (7.26 GB) and `m-a-p/YuE2-Vae` (507 MB) into `./models
 restricted to the same public file list the runtime itself resolves — no
 example audio, no wheels. See [model-setup.md](model-setup.md).
 
+## 2b. The cover workflow (optional)
+
+```bash
+make cover      # or: ./scripts/setup_cover.sh
+```
+
+Installs a private FFmpeg 7 under `tools/ffmpeg/`, the SheetSage2 weights, the
+MERT-v2-FullSong encoder and `.venv-sheetsage2`. Skip it if you do not need
+covers; the mode stays visible and disabled, with the reason, until it is there.
+
 ## 3. Configuration
 
 ```bash
@@ -75,7 +85,6 @@ YUE2_MODEL_PATH=./models/YuE2-3B
 YUE2_VAE_PATH=./models/YuE2-Vae
 DATA_DIR=./data
 
-CUDA_VISIBLE_DEVICES=0          # which GPU the worker uses
 MAX_CONCURRENT_GPU_JOBS=1       # raise only with more GPUs
 YUE2_MEMORY_BUDGET_GIB=40       # 24 is the documented baseline; 40 suits a 48 GB card
 YUE2_BACKEND=native             # native | mock | comfy
@@ -84,6 +93,13 @@ MODEL_IDLE_UNLOAD_SECONDS=0     # 0 keeps the 7.26 GB checkpoint resident
 
 Nothing is hard-coded: both processes read this file at startup. Restart them
 after changing it.
+
+**Which GPU runs the model is not set here.** It is chosen on the System page
+and stored in `data/runtime-settings.json`, so it can be changed while the
+application is running. `CUDA_VISIBLE_DEVICES` is a driver variable that must be
+exported into the worker's shell to have any effect; putting it in `.env` does
+nothing, because that file is read into the application's settings rather than
+into the process environment.
 
 ## 4. Prove the GPU path works
 

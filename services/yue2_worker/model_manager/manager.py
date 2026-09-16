@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 class PipelineKey:
     """Everything that forces a reload if it changes."""
 
+    device_index: int
     model: str
     revision: str | None
     vae: str
@@ -38,22 +39,52 @@ class PipelineKey:
 
 
 class ModelManager:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, store=None) -> None:
         self.settings = settings
+        self._store = store
         self._lock = threading.RLock()
         self._pipeline: Any = None
         self._key: PipelineKey | None = None
         self._loaded_at: float | None = None
         self._last_used: float | None = None
 
+    # -- device ------------------------------------------------------------ #
+
+    @property
+    def device_index(self) -> int:
+        """The GPU chosen on the System page, defaulting to the first visible one.
+
+        Read fresh rather than cached: the user can change it while the worker
+        is idle, and the next job should honour it without a restart.
+        """
+        if self._store is None:
+            return 0
+        return self._store.device_index()
+
+    @property
+    def device(self) -> str:
+        return f"cuda:{self.device_index}"
+
     # -- resolution -------------------------------------------------------- #
 
     def resolve_model(self, config: GenerationConfig) -> str:
-        return config.model.checkpoint.strip() or self.settings.model_reference
+        """The model directory to load.
+
+        ``DEFAULT_MODEL`` is a sentinel meaning "whatever .env configures", not
+        a path; it must be resolved here rather than handed to the runtime.
+        """
+        from yue2_studio_core.models import DEFAULT_MODEL
+
+        choice = config.model.checkpoint.strip()
+        if not choice or choice == DEFAULT_MODEL:
+            return self.settings.model_reference
+        return choice
 
     def resolve_vae(self, config: GenerationConfig) -> str:
-        choice = config.model.vae
-        if choice == "standard":
+        from yue2_studio_core.models import DEFAULT_MODEL
+
+        choice = (config.model.vae or "").strip()
+        if not choice or choice in {"standard", DEFAULT_MODEL}:
             return self.settings.vae_reference
         if choice == "legacy":
             return self.settings.vae_legacy_reference
@@ -61,6 +92,7 @@ class ModelManager:
 
     def key_for(self, config: GenerationConfig) -> PipelineKey:
         return PipelineKey(
+            device_index=self.device_index,
             model=self.resolve_model(config),
             revision=config.model.revision,
             vae=self.resolve_vae(config),
@@ -170,7 +202,7 @@ class ModelManager:
                     revision=key.revision,
                     vae_revision=key.vae_revision,
                     local_files_only=key.local_files_only,
-                    device="cuda",
+                    device=f"cuda:{key.device_index}",
                     memory_budget_gib=key.memory_budget_gib,
                     backend=key.backend,
                     quantization=key.quantization,
@@ -228,6 +260,7 @@ class ModelManager:
                 "vae": self._key.vae if self._key else None,
                 "backend": self._key.backend if self._key else None,
                 "quantization": self._key.quantization if self._key else None,
+                "device_index": self._key.device_index if self._key else None,
                 "loaded_at": self._loaded_at,
                 "idle_seconds": (time.time() - self._last_used) if self._last_used else None,
                 "weights": getattr(self._pipeline, "weights", None) if self._pipeline else None,

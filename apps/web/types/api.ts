@@ -4,6 +4,7 @@ export type JobStatus =
   | "DRAFT"
   | "QUEUED"
   | "LOADING_MODEL"
+  | "TRANSCRIBING"
   | "PLANNING"
   | "GENERATING"
   | "DECODING"
@@ -53,7 +54,13 @@ export interface ArtifactRef {
 
 export interface GenerationConfig {
   model: Record<string, unknown>;
-  prompt: { style: string; lyrics: string; abc: string; mode: GenerationMode };
+  prompt: {
+    style: string;
+    lyrics: string;
+    abc: string;
+    mode: GenerationMode;
+    reference_upload_id: string | null;
+  };
   planner: Record<string, unknown>;
   sampling: Record<string, unknown> & {
     seed: number;
@@ -113,13 +120,33 @@ export interface ParameterOption {
   enabled?: boolean;
   disabled_reason?: string;
   capability?: string;
+  /** Model options only. */
+  bytes?: number | null;
+  path?: string | null;
+  is_default?: boolean;
+  role?: string;
+}
+
+/**
+ * Plain-language help served with every parameter. Only fields that are true
+ * for that parameter are present, so a missing key means "nothing useful to
+ * say", not "not written yet".
+ */
+export interface ParameterGuidance {
+  severity: "info" | "caution";
+  what: string;
+  more?: string;
+  less?: string;
+  recommended?: string;
+  extremes?: string;
+  cost?: string;
 }
 
 export interface ParameterDefinition {
   key: string;
   label: string;
   group: string;
-  type: "string" | "text" | "float" | "int" | "bool" | "enum" | "abc";
+  type: "string" | "text" | "float" | "int" | "bool" | "enum" | "abc" | "upload";
   kind: "model" | "workflow" | "post" | "app";
   advanced: boolean;
   required?: boolean;
@@ -136,6 +163,10 @@ export interface ParameterDefinition {
   disabled_reason?: string;
   native: { supported: boolean; path: string | null; note?: string | null };
   comfy: { node: string | null; widget: string | null; note?: string | null };
+  guidance?: ParameterGuidance;
+  requires_mode?: string[];
+  capability?: string;
+  dynamic_options?: string;
 }
 
 export interface GenerationSchema {
@@ -147,13 +178,62 @@ export interface GenerationSchema {
   capabilities: Record<string, { supported: boolean; reason?: string; note?: string }>;
 }
 
+export interface ModelEntry {
+  id: string;
+  role: string;
+  label: string;
+  path: string | null;
+  present: boolean;
+  is_local: boolean;
+  is_default: boolean;
+  bytes: number | null;
+  problem: string | null;
+}
+
 export interface Capabilities {
   label: string;
   backend: string;
   modes: GenerationMode[];
   capabilities: Record<string, { supported: boolean; reason?: string; note?: string }>;
-  models: { id: string; role: string; label: string; present: boolean; bytes: number | null }[];
+  models: ModelEntry[];
   probe: Record<string, unknown>;
+}
+
+export interface GpuDevice {
+  index: number;
+  name: string;
+  memory_total_bytes: number;
+  memory_used_bytes: number;
+  memory_free_bytes: number;
+  compute_capability: string | null;
+  bf16_supported: boolean | null;
+  utilisation_percent: number | null;
+  temperature_c: number | null;
+  other_process_count: number;
+  other_process_bytes: number;
+  selected: boolean;
+  reported_by: "worker" | "nvml";
+  live_stats?: boolean;
+}
+
+export interface GpuInventory {
+  devices: GpuDevice[];
+  selected_index: number;
+  active_index: number | null;
+  pending_restart: boolean;
+  worker_online: boolean;
+  driver_version: string | null;
+  error: string | null;
+  cuda_visible_devices: string | null;
+  note: string | null;
+}
+
+export interface DeleteReport {
+  deleted: boolean;
+  generation_id: string;
+  artifacts_removed: number;
+  complete: boolean;
+  failures: { path: string; error: string }[];
 }
 
 export interface QueueView {
@@ -188,6 +268,7 @@ export interface SystemInfo {
   disk: { total_bytes: number; used_bytes: number; free_bytes: number; path: string };
   queue: { depth: number; active: unknown[]; by_status: Record<string, number>; total_generations: number };
   worker: { workers: WorkerHeartbeat[]; online: boolean };
+  devices: GpuInventory;
   models: Record<string, unknown>;
 }
 

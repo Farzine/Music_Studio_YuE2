@@ -3,7 +3,7 @@
   "description": "Default GenerationConfig. Loaded at runtime; not compiled into the code.",
   "config": {
     "model": {
-      "checkpoint": "",
+      "checkpoint": "default",
       "revision": null,
       "vae": "standard",
       "vae_revision": null,
@@ -13,7 +13,13 @@
       "memory_budget_gib": 40.0,
       "local_files_only": true
     },
-    "prompt": {"style": "", "lyrics": "", "abc": "", "mode": "full"},
+    "prompt": {
+      "style": "",
+      "lyrics": "",
+      "abc": "",
+      "mode": "full",
+      "reference_upload_id": null
+    },
     "planner": {
       "temperature": 0.7,
       "top_p": 0.9,
@@ -46,7 +52,15 @@
       "seconds": null,
       "batch_size": null
     },
-    "decoder": {"mode": "tiled", "tile_frames": 1024, "halo_frames": 16},
-    "output": {"format": "flac", "filename_prefix": "YuE2", "keep_canonical": true}
+    "decoder": {
+      "mode": "tiled",
+      "tile_frames": 1024,
+      "halo_frames": 16
+    },
+    "output": {
+      "format": "flac",
+      "filename_prefix": "YuE2",
+      "keep_canonical": true
+    }
   }
 }

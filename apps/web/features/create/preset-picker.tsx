@@ -30,7 +30,7 @@ export function PresetPicker({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {presets.map((preset) => (
           <button
             key={preset.id}
@@ -38,10 +38,10 @@ export function PresetPicker({
             onClick={() => onApply(preset)}
             title={preset.description}
             className={cn(
-              "rounded-xl border px-3 py-1.5 text-xs transition-colors",
+              "h-8 rounded-[var(--radius-sm)] border px-3 text-xs transition-colors",
               activeId === preset.id
-                ? "border-[var(--color-accent)] bg-[color-mix(in_oklch,var(--color-accent)_14%,transparent)] text-[var(--color-accent)]"
-                : "border-[var(--color-line)] text-[var(--color-ink-muted)] hover:border-[var(--color-ink-faint)] hover:text-[var(--color-ink)]",
+                ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                : "border-[var(--color-line)] text-[var(--color-ink-muted)] hover:border-[var(--color-line-strong)] hover:text-[var(--color-ink)]",
             )}
           >
             {activeId === preset.id ? <Check className="mr-1 inline h-3 w-3" /> : null}

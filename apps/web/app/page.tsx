@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState, Skeleton } from "@/components/ui/feedback";
-import { SongCard } from "@/features/library/song-card";
+import { GenerationCard } from "@/components/library/generation-card";
 import { useGenerations, useProjects } from "@/hooks/use-queries";
 import { formatRelative } from "@/lib/format";
 
@@ -18,16 +18,16 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <section className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-line)] bg-[var(--color-surface)] p-8">
+      <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-line)] bg-[var(--color-surface)] p-6 sm:p-8">
         <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-ink-faint)]">Local-first</p>
-        <h1 className="mt-2 max-w-2xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
+        <h1 className="text-balance-tight mt-2 max-w-2xl text-2xl font-semibold leading-tight tracking-tight sm:text-3xl lg:text-4xl">
           Make a whole song from a style and a few lines.
         </h1>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-[var(--color-ink-muted)]">
           Everything runs on this machine with the open YuE2-3B model. Each generation keeps its exact settings,
           its score and a manifest, so you can always hear what changed and why.
         </p>
-        <div className="mt-6 flex flex-wrap gap-2">
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button variant="primary" asChild>
             <Link href="/create">
               <Sparkles className="h-4 w-4" />
@@ -102,7 +102,7 @@ export default function DashboardPage() {
         ) : recent && recent.items.length > 0 ? (
           <div className="grid gap-3 lg:grid-cols-2">
             {recent.items.map((job) => (
-              <SongCard key={job.id} job={job} />
+              <GenerationCard key={job.id} job={job} />
             ))}
           </div>
         ) : null}

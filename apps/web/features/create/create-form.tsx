@@ -1,31 +1,25 @@
 "use client";
 
-import { Dice5, Loader2, Music4, Wand2 } from "lucide-react";
+import { Dice5, Sliders, Sparkles, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
+import { AudioUploader, type UploadedAudio } from "@/components/audio/audio-uploader";
+import { ModeSelector } from "@/components/generation/mode-selector";
+import { AdvancedSettings } from "@/components/settings/advanced-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, SectionHeading } from "@/components/ui/card";
 import { ErrorNotice, Skeleton, WarningNotice } from "@/components/ui/feedback";
-import { FieldShell, Input, Textarea } from "@/components/ui/field";
-import { AdvancedSettings } from "@/features/create/advanced-settings";
+import { Field, Input, Textarea } from "@/components/ui/field";
+import { Slider } from "@/components/ui/controls";
 import { PresetPicker } from "@/features/create/preset-picker";
-import { ReferenceAudioPanel, type ReferenceAudio } from "@/features/create/reference-audio";
 import { useCapabilities, useGenerationActions, usePresets, useSchema } from "@/hooks/use-queries";
 import { ApiRequestError, api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { SECTION_TAGS, STYLE_EXAMPLES, getPath, setPath, type ConfigObject } from "@/lib/config";
+import { SECTION_TAGS, STYLE_EXAMPLES, deepMerge, getPath, setPath, type ConfigObject } from "@/lib/config";
 import { formatDuration } from "@/lib/format";
-import type { GenerationMode, ParameterOption, Preset } from "@/types/api";
-
-const MODE_ICON: Record<string, string> = {
-  full: "Full Song",
-  melody: "Melody Guided",
-  off: "Direct Audio",
-  cover: "Cover",
-  score_edit: "Score Edit",
-};
+import type { Preset } from "@/types/api";
 
 export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) {
   const router = useRouter();
@@ -37,32 +31,41 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
   const [config, setConfig] = React.useState<ConfigObject>(initialConfig ?? {});
   const [title, setTitle] = React.useState("");
   const [activePreset, setActivePreset] = React.useState<string | null>("preset_balanced");
-  const [reference, setReference] = React.useState<ReferenceAudio | null>(null);
+  const [reference, setReference] = React.useState<UploadedAudio | null>(null);
   const [error, setError] = React.useState<ApiRequestError | null>(null);
   const [vramWarning, setVramWarning] = React.useState<string | null>(null);
 
   const defaults = presetData?.defaults as ConfigObject | undefined;
-  const effective = React.useMemo<ConfigObject>(() => {
-    if (!defaults) return config;
-    return mergeDeep(defaults, config);
-  }, [defaults, config]);
+  const effective = React.useMemo<ConfigObject>(
+    () => (defaults ? deepMerge(defaults, config) : config),
+    [defaults, config],
+  );
 
-  const modeParameter = schema?.parameters.find((parameter) => parameter.key === "prompt.mode");
-  const mode = (getPath(effective, "prompt.mode") as GenerationMode) ?? "full";
+  const parameter = (key: string) => schema?.parameters.find((item) => item.key === key);
+  const mode = (getPath(effective, "prompt.mode") as string) ?? "full";
   const style = (getPath(effective, "prompt.style") as string) ?? "";
   const lyrics = (getPath(effective, "prompt.lyrics") as string) ?? "";
   const duration = (getPath(effective, "sampling.max_duration_seconds") as number) ?? 360;
   const seed = getPath(effective, "sampling.seed") as number | undefined;
+  const seedBehaviour = getPath(effective, "sampling.control_after_generate") as string;
   const decoderMode = (getPath(effective, "decoder.mode") as string) ?? "tiled";
   const budget = (getPath(effective, "model.memory_budget_gib") as number) ?? 40;
-  const coverCapability = capabilities?.capabilities?.cover;
+  const cover = capabilities?.capabilities?.cover;
 
   const update = (path: string, value: unknown) => {
     setConfig((current) => setPath(current, path, value));
     setActivePreset(null);
   };
 
-  // Ask the backend whether this request looks too large before it is queued.
+  // Switching away from Cover drops the reference, so the request never
+  // carries an input the chosen mode does not use.
+  React.useEffect(() => {
+    if (mode !== "cover" && getPath(effective, "prompt.reference_upload_id")) {
+      setConfig((current) => setPath(current, "prompt.reference_upload_id", null));
+      setReference(null);
+    }
+  }, [mode, effective]);
+
   React.useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -80,92 +83,78 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
   }, [duration, decoderMode, budget]);
 
   const insertTag = (tag: string) => {
-    const next = lyrics ? `${lyrics.replace(/\s*$/, "")}\n\n${tag}\n` : `${tag}\n`;
-    update("prompt.lyrics", next);
+    update("prompt.lyrics", lyrics ? `${lyrics.replace(/\s*$/, "")}\n\n${tag}\n` : `${tag}\n`);
   };
+
+  const needsLyrics = mode !== "off";
+  const needsReference = mode === "cover";
+  const canSubmit =
+    style.trim().length > 0 &&
+    (!needsLyrics || lyrics.trim().length > 0) &&
+    (!needsReference || Boolean(reference));
+
+  const blocker = !style.trim()
+    ? "Describe a style to get started."
+    : needsLyrics && !lyrics.trim()
+      ? "Add lyrics, or switch to Direct Audio."
+      : needsReference && !reference
+        ? "Upload the recording you want to cover."
+        : null;
 
   const submit = async () => {
     setError(null);
     try {
-      const payload = { ...config } as ConfigObject;
       const result = await create.mutateAsync({
         title: title.trim() || undefined,
-        config: payload as Record<string, unknown>,
+        config: config as Record<string, unknown>,
       });
       router.push(`/generations/${result.generation.id}`);
     } catch (submitError) {
-      setError(submitError instanceof ApiRequestError ? submitError : null);
-      if (!(submitError instanceof ApiRequestError)) throw submitError;
+      if (submitError instanceof ApiRequestError) {
+        setError(submitError);
+        return;
+      }
+      throw submitError;
     }
   };
 
   if (schemaLoading || !schema || !defaults) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-11 w-full" />
-        <Skeleton className="h-28 w-full" />
-        <Skeleton className="h-72 w-full" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-40 w-full" />
       </div>
     );
   }
 
-  const modeOptions = (modeParameter?.options ?? []) as ParameterOption[];
-  const canSubmit = style.trim().length > 0 && (mode === "off" || lyrics.trim().length > 0);
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 pb-24 lg:pb-0">
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
-            <Music4 className="h-4 w-4 text-[var(--color-accent)]" />
+            <Sparkles className="h-4 w-4 text-[var(--color-accent)]" />
             Create music
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <FieldShell label="Title" help="Optional. Used to name the project and downloads." htmlFor="title">
+        <CardContent className="space-y-6">
+          <Field label="Title" description="Optional. Names the project and your downloads." htmlFor="title">
             <Input
               id="title"
               placeholder="Untitled"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
             />
-          </FieldShell>
+          </Field>
 
-          <FieldShell label="Mode" help="Choose how much of the composition the model plans before it sings.">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              {modeOptions.map((option) => {
-                const disabled = option.enabled === false;
-                const selected = option.value === mode;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    disabled={disabled}
-                    title={disabled ? option.disabled_reason : option.help}
-                    onClick={() => update("prompt.mode", option.value)}
-                    className={cn(
-                      "rounded-xl border px-3 py-2.5 text-left text-xs transition-colors",
-                      selected
-                        ? "border-[var(--color-accent)] bg-[color-mix(in_oklch,var(--color-accent)_12%,transparent)]"
-                        : "border-[var(--color-line)] hover:border-[var(--color-ink-faint)]",
-                      disabled && "cursor-not-allowed opacity-45",
-                    )}
-                  >
-                    <span className="block font-medium">{MODE_ICON[option.value] ?? option.label}</span>
-                    <span className="mt-0.5 block leading-snug text-[var(--color-ink-faint)]">
-                      {disabled ? option.disabled_reason : option.help}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </FieldShell>
-
-          <FieldShell
+          <Field
             label="Style"
-            help="Genre, instruments, vocal character, language and tempo."
             htmlFor="style"
-            hint={<span>{style.length}/4000</span>}
+            required
+            guidance={parameter("prompt.style")?.guidance}
+            description="Genre, instruments, vocal character, language and tempo."
+            value={`${style.length}/4000`}
           >
             <Textarea
               id="style"
@@ -180,31 +169,33 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
                   key={example}
                   type="button"
                   onClick={() => update("prompt.style", example)}
-                  className="rounded-lg border border-[var(--color-line)] px-2 py-1 text-[11px] text-[var(--color-ink-faint)] transition-colors hover:border-[var(--color-ink-faint)] hover:text-[var(--color-ink)]"
+                  className="rounded-[var(--radius-sm)] border border-[var(--color-line)] px-2 py-1 text-[11px] text-[var(--color-ink-faint)] transition-colors hover:border-[var(--color-line-strong)] hover:text-[var(--color-ink)]"
                 >
                   {example.split(",")[0]}
                 </button>
               ))}
             </div>
-          </FieldShell>
+          </Field>
 
-          <FieldShell
+          <Field
             label="Lyrics"
-            help={
-              mode === "off"
-                ? "Direct Audio ignores lyrics; leave this empty for an instrumental idea."
-                : "Use section tags on their own line."
-            }
             htmlFor="lyrics"
-            hint={<span>{lyrics.length}/20000</span>}
+            required={needsLyrics}
+            guidance={parameter("prompt.lyrics")?.guidance}
+            description={
+              needsLyrics
+                ? "Use section tags on their own line."
+                : "Direct Audio ignores lyrics — leave this empty for an instrumental."
+            }
+            value={`${lyrics.length}/20000`}
           >
-            <div className="mb-1.5 flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               {SECTION_TAGS.map((tag) => (
                 <button
                   key={tag}
                   type="button"
                   onClick={() => insertTag(tag)}
-                  className="rounded-lg border border-[var(--color-line)] px-2 py-1 font-mono text-[11px] text-[var(--color-ink-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                  className="rounded-[var(--radius-sm)] border border-[var(--color-line)] px-2 py-1 font-mono text-[11px] text-[var(--color-ink-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
                 >
                   {tag}
                 </button>
@@ -212,111 +203,148 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
             </div>
             <Textarea
               id="lyrics"
-              rows={12}
+              rows={11}
               placeholder={"[Verse]\nNeon fades along the lane\n\n[Chorus]\nLet the day come into view"}
               value={lyrics}
               onChange={(event) => update("prompt.lyrics", event.target.value)}
               className="font-mono text-[13px]"
             />
-          </FieldShell>
+          </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FieldShell
-              label="Maximum duration"
-              help="The model stops when the song is finished; this is only a ceiling."
-              hint={<span>{formatDuration(duration)}</span>}
+          <ModeSelector
+            parameter={parameter("prompt.mode")}
+            value={mode}
+            onChange={(next) => update("prompt.mode", next)}
+          />
+
+          {mode === "cover" ? (
+            <Field
+              label="Reference audio"
+              required
+              guidance={parameter("prompt.reference_upload_id")?.guidance}
             >
-              <input
-                type="range"
+              <AudioUploader
+                value={reference}
+                disabled={!cover?.supported}
+                disabledReason={cover?.reason}
+                onChange={(next) => {
+                  setReference(next);
+                  update("prompt.reference_upload_id", next?.id ?? null);
+                }}
+              />
+            </Field>
+          ) : null}
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field
+              label="Maximum duration"
+              guidance={parameter("sampling.max_duration_seconds")?.guidance}
+              value={formatDuration(duration)}
+              description={`${Math.round(duration * 25).toLocaleString()} acoustic tokens at 25 per second. The model stops when the song is finished.`}
+            >
+              <Slider
+                value={[duration]}
                 min={8}
                 max={960}
                 step={1}
-                value={duration}
-                onChange={(event) => update("sampling.max_duration_seconds", Number(event.target.value))}
-                className="w-full accent-[var(--color-accent)]"
                 aria-label="Maximum duration"
+                onValueChange={([next]) => update("sampling.max_duration_seconds", next)}
               />
-              <p className="text-xs text-[var(--color-ink-faint)]">
-                {Math.round(duration * 25).toLocaleString()} acoustic tokens at 25 per second
-              </p>
-            </FieldShell>
+            </Field>
 
-            <FieldShell label="Seed" help="The same seed, settings and weights reproduce a generation." htmlFor="seed">
+            <Field
+              label="Seed"
+              htmlFor="seed"
+              guidance={parameter("sampling.seed")?.guidance}
+              description={
+                seedBehaviour === "randomize"
+                  ? "A new seed is drawn on the server for each run and saved to the manifest."
+                  : "The same seed, settings and weights reproduce this exact song."
+              }
+            >
               <div className="flex gap-2">
                 <Input
                   id="seed"
                   type="number"
+                  inputMode="numeric"
+                  className="tabular-nums"
                   value={seed ?? ""}
                   onChange={(event) => update("sampling.seed", Number(event.target.value))}
                 />
                 <Button
-                  variant="surface"
+                  variant={seedBehaviour === "randomize" ? "primary" : "surface"}
                   size="icon"
-                  aria-label="Randomise the seed"
-                  onClick={() => update("sampling.control_after_generate", "randomize")}
+                  aria-label="Randomise the seed for each run"
+                  aria-pressed={seedBehaviour === "randomize"}
+                  onClick={() =>
+                    update(
+                      "sampling.control_after_generate",
+                      seedBehaviour === "randomize" ? "fixed" : "randomize",
+                    )
+                  }
                 >
                   <Dice5 className="h-4 w-4" />
                 </Button>
               </div>
-              <p className="text-xs text-[var(--color-ink-faint)]">
-                {getPath(effective, "sampling.control_after_generate") === "randomize"
-                  ? "A new seed is drawn on the server and saved to the manifest."
-                  : "Fixed seed."}
-              </p>
-            </FieldShell>
+            </Field>
           </div>
-
-          {mode === "cover" ? (
-            <FieldShell label="Reference audio" help="Transcribed to a melody score, then used to condition generation.">
-              <ReferenceAudioPanel
-                enabled={Boolean(coverCapability?.supported)}
-                disabledReason={coverCapability?.reason}
-                value={reference}
-                onChange={setReference}
-              />
-            </FieldShell>
-          ) : null}
 
           {vramWarning ? <WarningNotice>{vramWarning}</WarningNotice> : null}
           {error ? (
-            <ErrorNotice title={error.code} message={error.message} guidance={error.guidance} />
+            <ErrorNotice
+              title={error.code.replace(/_/g, " ").toLowerCase()}
+              message={error.message}
+              guidance={error.guidance}
+            />
           ) : null}
 
-          <Button
-            variant="primary"
-            size="lg"
-            className="w-full"
-            disabled={!canSubmit || create.isPending}
-            onClick={submit}
-          >
-            {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-            {create.isPending ? "Queueing…" : "Create"}
-          </Button>
-          {!canSubmit ? (
-            <p className="text-center text-xs text-[var(--color-ink-faint)]">
-              {style.trim() ? "Add lyrics, or switch to Direct Audio." : "Describe a style to get started."}
-            </p>
-          ) : null}
+          {/* Desktop action. On phones the sticky bar below takes over. */}
+          <div className="hidden lg:block">
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              disabled={!canSubmit}
+              loading={create.isPending}
+              onClick={submit}
+            >
+              {create.isPending ? null : <Wand2 className="h-4 w-4" />}
+              {create.isPending ? "Queueing…" : "Create"}
+            </Button>
+            {blocker ? (
+              <p className="mt-2 text-center text-xs text-[var(--color-ink-faint)]">{blocker}</p>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center justify-between">
-            <span>Advanced settings</span>
-            <Badge tone="neutral">{schema.backend}</Badge>
-          </CardTitle>
+        <CardHeader className="gap-3 pb-3">
+          <SectionHeading
+            title={
+              <span className="flex items-center gap-2">
+                <Sliders className="h-4 w-4 text-[var(--color-ink-faint)]" />
+                Advanced settings
+              </span>
+            }
+            description="Everything the backend supports. Hover or tap the ⓘ beside any setting for what it does."
+            action={<Badge tone="outline">{schema.backend}</Badge>}
+          />
           <PresetPicker
             presets={(presetData?.items ?? []) as Preset[]}
             activeId={activePreset}
             currentConfig={config}
             onSaved={() => void refetchPresets()}
             onApply={(preset) => {
-              setConfig(preset.config as unknown as ConfigObject);
+              // A preset is a full configuration, but it is a settings preset:
+              // applying one must not wipe the song the user has written.
+              const { prompt: _ignored, ...settings } = preset.config as unknown as ConfigObject;
+              setConfig((current) => ({ ...settings, prompt: current.prompt }));
               setActivePreset(preset.id);
             }}
             onReset={() => {
-              setConfig({});
+              // Same rule in reverse: reset the settings, keep the song.
+              setConfig((current) => (current.prompt ? { prompt: current.prompt } : {}));
               setActivePreset("preset_balanced");
             }}
           />
@@ -325,6 +353,7 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
           <AdvancedSettings
             schema={schema}
             config={effective}
+            defaults={defaults}
             onChange={(next) => {
               setConfig(next);
               setActivePreset(null);
@@ -332,19 +361,24 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
           />
         </CardContent>
       </Card>
+
+      {/* Sticky create bar: on a phone the button must always be reachable. */}
+      <div className="fixed inset-x-0 bottom-[calc(var(--mobile-nav-height)+env(safe-area-inset-bottom))] z-20 border-t border-[var(--color-line)] bg-[color-mix(in_oklch,var(--color-canvas)_94%,transparent)] px-4 py-3 backdrop-blur-xl lg:hidden">
+        <Button
+          variant="primary"
+          size="lg"
+          className="w-full"
+          disabled={!canSubmit}
+          loading={create.isPending}
+          onClick={submit}
+        >
+          {create.isPending ? null : <Wand2 className="h-4 w-4" />}
+          {create.isPending ? "Queueing…" : "Create"}
+        </Button>
+        {blocker ? (
+          <p className={cn("mt-1.5 text-center text-xs text-[var(--color-ink-faint)]")}>{blocker}</p>
+        ) : null}
+      </div>
     </div>
   );
-}
-
-function mergeDeep(base: ConfigObject, overrides: ConfigObject): ConfigObject {
-  const result: ConfigObject = { ...base };
-  Object.entries(overrides).forEach(([key, value]) => {
-    const existing = result[key];
-    if (value && typeof value === "object" && !Array.isArray(value) && existing && typeof existing === "object") {
-      result[key] = mergeDeep(existing as ConfigObject, value as ConfigObject);
-    } else {
-      result[key] = value;
-    }
-  });
-  return result;
 }

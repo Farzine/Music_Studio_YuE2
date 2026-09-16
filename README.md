@@ -19,12 +19,14 @@ Verified on the target hardware (NVIDIA RTX A6000, 48 GB, driver 560.28.03):
 | Model | `m-a-p/YuE2-3B` (7.26 GB) + `m-a-p/YuE2-Vae` |
 | Output | 48 kHz stereo, 24-bit FLAC (or WAV; MP3 as an explicit conversion) |
 | Measured | 30 s of audio in 28.6 s wall clock, 7.24 GiB peak VRAM |
-| Stages | plan → acoustic tokens → synthesis → decode, each reported separately |
+| Stages | transcribe (covers) → plan → acoustic tokens → synthesis → decode, each reported separately |
+| GPUs | every card is listed on the System page with its free memory; pick one there, no restart |
 
-Modes: **Full Song**, **Melody Guided**, **Direct Audio** and **Score Edit**.
-**Cover** is implemented but stays switched off until SheetSage2 and FFmpeg 6.1
-are installed — the UI says exactly why rather than offering a mode that would
-fail. See [docs/cover-workflow.md](docs/cover-workflow.md).
+Modes: **Full Song**, **Melody Guided**, **Direct Audio**, **Score Edit** and
+**Cover**. Cover transcribes a recording you supply into a melody score with
+SheetSage2 and realises it in your style; install it with `make cover` and the
+System page will show it switched on. Anything not installed stays visible but
+disabled with the specific reason, rather than quietly missing.
 
 ---
 
@@ -35,6 +37,7 @@ git clone <this repo> && cd yue2-music-studio
 
 make install          # .venv-api, .venv-yue2 and the frontend
 make models           # ~7.8 GB of weights into ./models
+make cover            # optional: SheetSage2 + FFmpeg 7 for the cover workflow
 cp .env.example .env  # adjust paths if your models live elsewhere
 
 make smoke-test       # prove the GPU path works before opening a browser
@@ -102,10 +105,31 @@ it is never accepted and then ignored.
 
 **3. Progress is never invented.** Token stages report real counts and a rate,
 with no percentage, because a generation limit is a ceiling and not a target.
-Stages that do have a target — ODE solver steps, decoder chunks — report a real
-percentage. See [docs/parameter-guide.md](docs/parameter-guide.md).
+Stages that do have a target — ODE solver steps, decoder chunks, transcription
+windows — report a real percentage.
+
+**4. Every setting explains itself.** All 46 parameters carry plain-language
+help served by the backend: what it is, what happens if you raise or lower it,
+what is recommended, what an extreme value does, and whether it costs time or
+memory. It appears behind an ⓘ beside the label — or a ⚠ for the seventeen
+settings where an unusual value genuinely destabilises output, inflates VRAM or
+lengthens a run. Hover on a desktop, tap on a phone, or reach it with the
+keyboard. See [docs/parameter-guide.md](docs/parameter-guide.md).
 
 ---
+
+## Choosing a GPU
+
+On a machine with more than one card, or one shared with other work, the System
+page lists every GPU with its free memory, its utilisation and how much other
+processes are holding, and lets you pick which one loads the model. The choice
+is stored in `data/runtime-settings.json` and applies to the next generation; a
+run already in flight finishes on the card it started on.
+
+`CUDA_VISIBLE_DEVICES` in `.env` does **not** control this, and never did — that
+file is read into the application's settings, not exported into the worker's
+process environment. Use the System page, or export the variable in the shell
+that starts the worker if you want to hide cards entirely.
 
 ## Reproducibility
 

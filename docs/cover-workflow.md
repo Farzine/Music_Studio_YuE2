@@ -7,60 +7,60 @@ melody, then ask YuE2 to realise it in a new style.
 reference audio ──► SheetSage2 ──► melody ABC ──► review/edit ──► YuE2 (cot=melody)
 ```
 
-## Status on this machine
-
-**Disabled.** The Create screen shows the mode greyed out and `/system` gives the
-reason. The capability check is real, not a placeholder:
-
-* `m-a-p/SheetSage2` must exist at `SHEETSAGE2_MODEL_PATH`.
-* FFmpeg **6.1 or newer** must be on `PATH`. Ubuntu 22.04 ships 4.4.2, which is
-  not sufficient.
-
-Until both hold, the mode is not offered. This is deliberate: a mode that would
-fail at generation time should not be presented as available.
-
-## Enabling it
-
-SheetSage2 and YuE2 pin incompatible dependency versions, so SheetSage2 gets its
-own environment and the two exchange files. Run them sequentially — they share
-one GPU.
-
-### 1. FFmpeg 6.1+
-
-Ubuntu 22.04 needs a newer build than the archive provides — a static build or a
-backport both work. Verify:
+## Installing it
 
 ```bash
-ffmpeg -version | head -1
+make cover      # or: ./scripts/setup_cover.sh
 ```
 
-### 2. A separate environment
+That does four things, all of which the capability check then verifies:
 
-```bash
-python3.11 -m venv .venv-sheetsage2
-.venv-sheetsage2/bin/python -m pip install huggingface-hub==0.36.0
-.venv-sheetsage2/bin/huggingface-cli download m-a-p/SheetSage2 --local-dir models/SheetSage2
-.venv-sheetsage2/bin/python -m pip install torch==2.8.0 torchaudio==2.8.0 \
-  --index-url https://download.pytorch.org/whl/cu126
-.venv-sheetsage2/bin/python -m pip install -r models/SheetSage2/requirements.txt
+1. **A private FFmpeg 7.** SheetSage2 needs 6.1 or newer and Ubuntu 22.04 ships
+   4.4.2, so a static build is installed under `tools/ffmpeg/` rather than
+   touching the system one. The worker puts it at the front of the subprocess's
+   `PATH`.
+2. **The SheetSage2 weights** into `models/SheetSage2`, without the
+   notation-rendering assets, which transcription does not need.
+3. **The MERT-v2-FullSong encoder** into the Hugging Face cache. SheetSage2's
+   configuration selects it by repository id, so it has to be cached for
+   offline transcription to work.
+4. **`.venv-sheetsage2`**, a separate environment. SheetSage2 pins torch 2.8.0
+   and transformers 4.45.2; YuE2 pins 2.10.0 and 4.57.6. They cannot share an
+   interpreter.
+
+Restart the API afterwards. `/system` shows `cover: on`, and Cover becomes
+selectable on the Create screen.
+
+Until all four are present the mode is offered but disabled, with the specific
+thing that is missing written next to it — a mode that would fail at generation
+time should not look available.
+
+## How it runs
+
+```text
+upload ──► services/sheetsage2_worker/transcribe.py   (.venv-sheetsage2, subprocess)
+              │ melody-only ABC + warnings, as JSON
+              ▼
+           YuE2 native adapter, cot=melody           (.venv-yue2)
 ```
 
-Loading SheetSage2 pulls in the MERT-v2-FullSong encoder its configuration
-selects; no separate feature-extraction step is needed.
+The two never share a process. The worker launches the transcriber with an
+argument list — never a shell string — pins it to the selected GPU with
+`CUDA_VISIBLE_DEVICES`, and reads back one JSON report that always exists, so a
+failure never has to be recovered from stderr.
 
-### 3. Point the studio at it
+Transcription runs **before** the YuE2 weights are loaded, so the two models are
+not resident on the same card at once. It appears in the UI as its own
+`TRANSCRIBING` stage, reporting real window counts from the encoder.
 
-```env
-SHEETSAGE2_MODEL_PATH=./models/SheetSage2
-```
-
-Restart the API. `/system` should now show `cover: on`, and Cover appears on the
-Create screen.
+Measured on an RTX A6000: a 30-second reference transcribes and generates a
+40-second cover in about 90 seconds end to end.
 
 ## Using it
 
 1. Choose **Cover** and drop in a reference file (WAV, FLAC, MP3, OGG, M4A,
-   AIFF). The panel shows its duration once the file is probed.
+   AIFF, up to 100 MB). The panel shows its duration, sample rate and channels
+   once the file is probed, and lets you play it back before committing.
 2. The audio is transcribed to a melody-only score — vocal and instrumental
    melodies, no chord symbols.
 3. **Review the score before generating.** Transcription is not exact, and
@@ -83,6 +83,19 @@ Create screen.
 * The reference recording carries its own rights. Transcribing and re-recording
   it does not change that, and the model weights are non-commercial
   ([licensing.md](licensing.md)).
+
+## When it fails
+
+Every failure is reported as `AUDIO_INPUT_ERROR` with the transcriber's own
+reason, and the full report is kept at
+`…/generations/<id>/score/transcription/transcription.json`.
+
+Common causes:
+
+* **No usable melody found.** A dense or heavily produced mix can defeat
+  transcription. Try a sparser recording.
+* **The encoder is not cached.** Run `make cover` again; step 3 fetches it.
+* **The run exceeded `SHEETSAGE2_TIMEOUT_SECONDS`** (30 minutes by default).
 
 ## In the ComfyUI reference workflow
 

@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     yue2_vae_path: str = "./models/YuE2-Vae"
     yue2_vae_legacy_path: str = "./models/YuE2-Vae-legacy"
     sheetsage2_model_path: str = "./models/SheetSage2"
+    sheetsage2_venv: str = "./.venv-sheetsage2"
+    sheetsage2_timeout_seconds: int = 1800
+    #: A private FFmpeg, so the cover workflow does not depend on the system one
+    #: being new enough (SheetSage2 needs 6.1+; Ubuntu 22.04 ships 4.4.2).
+    ffmpeg_dir: str = "./tools/ffmpeg"
     yue2_model_revision: str | None = None
     yue2_vae_revision: str | None = None
 
@@ -111,6 +116,21 @@ class Settings(BaseSettings):
     @property
     def sheetsage2_path(self) -> Path:
         return self._resolve(self.sheetsage2_model_path)
+
+    @property
+    def sheetsage2_python(self) -> Path:
+        return self._resolve(self.sheetsage2_venv) / "bin" / "python"
+
+    @property
+    def ffmpeg_path(self) -> Path:
+        """The bundled FFmpeg if present, otherwise whatever is on PATH."""
+        bundled = self._resolve(self.ffmpeg_dir) / "ffmpeg"
+        if bundled.is_file():
+            return bundled
+        import shutil
+
+        found = shutil.which("ffmpeg")
+        return Path(found) if found else bundled
 
     @property
     def cuda_visible_devices(self) -> str | None:

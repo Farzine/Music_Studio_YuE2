@@ -21,6 +21,7 @@ export const keys = {
   presets: ["presets"] as const,
   health: ["health"] as const,
   system: ["system"] as const,
+  gpus: ["gpus"] as const,
   queue: ["queue"] as const,
   generations: (params: Record<string, unknown>) => ["generations", params] as const,
   generation: (id: string) => ["generation", id] as const,
@@ -39,6 +40,21 @@ export const useHealth = () =>
   useQuery({ queryKey: keys.health, queryFn: api.health, refetchInterval: 15_000 });
 export const useSystemInfo = () =>
   useQuery({ queryKey: keys.system, queryFn: api.systemInfo, refetchInterval: 5_000 });
+
+export const useGpus = () =>
+  useQuery({ queryKey: keys.gpus, queryFn: api.gpus, refetchInterval: 5_000 });
+
+/** Choosing a GPU rewrites runtime settings; the worker picks it up next job. */
+export function useSelectDevice() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.selectDevice,
+    onSuccess: (data) => {
+      client.setQueryData(keys.gpus, data);
+      client.invalidateQueries({ queryKey: keys.system });
+    },
+  });
+}
 
 /** The queue polls quickly while anything is running, slowly when idle. */
 export function useQueue() {

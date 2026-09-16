@@ -143,6 +143,45 @@ class Store:
         if not is_valid_id(value):
             raise NotFoundError(f"invalid identifier: {value!r}")
 
+    # -- runtime settings ------------------------------------------------ #
+
+    @property
+    def runtime_settings_path(self) -> Path:
+        return self.root / "runtime-settings.json"
+
+    def read_runtime_settings(self) -> dict:
+        """Settings the user can change while the application is running.
+
+        These live in the data directory rather than .env because the System
+        page writes them: the worker picks them up on its next job without a
+        restart, and a wrong value can be corrected from the UI.
+        """
+        path = self.runtime_settings_path
+        if not path.is_file():
+            return {}
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def write_runtime_settings(self, values: dict) -> dict:
+        current = self.read_runtime_settings()
+        current.update(values)
+        current["schema_version"] = 1
+        current["updated_at"] = utcnow().isoformat()
+        write_json_atomic(self.runtime_settings_path, current)
+        return current
+
+    def device_index(self, default: int = 0) -> int:
+        """Which visible CUDA device the worker should use."""
+        value = self.read_runtime_settings().get("device_index", default)
+        try:
+            index = int(value)
+        except (TypeError, ValueError):
+            return default
+        return index if index >= 0 else default
+
     # -- projects -------------------------------------------------------- #
 
     def create_project(self, **fields) -> SongProject:
@@ -168,6 +207,38 @@ class Store:
             if path.is_file():
                 projects.append(SongProject.model_validate_json(path.read_text(encoding="utf-8")))
         return projects
+
+    def delete_generation_artifacts(self, project_id: str, generation_id: str) -> dict:
+        """Remove a generation's directory, reporting precisely what happened.
+
+        A partial failure is returned rather than swallowed: claiming a clean
+        delete while files remain on disk would leave orphans nobody looks for.
+        """
+        directory = self.generation_dir(project_id, generation_id)
+        report: dict = {"directory": str(directory), "existed": directory.is_dir(), "removed": [], "failed": []}
+        if directory.is_dir():
+            for path in sorted(directory.rglob("*"), reverse=True):
+                try:
+                    if path.is_dir() and not path.is_symlink():
+                        path.rmdir()
+                    else:
+                        path.unlink()
+                    report["removed"].append(str(path.relative_to(directory)))
+                except OSError as exc:
+                    report["failed"].append({"path": str(path.relative_to(directory)), "error": str(exc)})
+            try:
+                directory.rmdir()
+            except OSError as exc:
+                report["failed"].append({"path": ".", "error": str(exc)})
+        for path in (self.job_path(generation_id), self.cancel_marker_path(generation_id)):
+            try:
+                if path.exists():
+                    path.unlink()
+                    report["removed"].append(path.name)
+            except OSError as exc:
+                report["failed"].append({"path": path.name, "error": str(exc)})
+        report["complete"] = not report["failed"]
+        return report
 
     def delete_project(self, project_id: str) -> None:
         directory = self.project_dir(project_id)

@@ -74,7 +74,7 @@ export function PlayerBar() {
   const progress = duration > 0 ? currentTime / duration : 0;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-line)] bg-[color-mix(in_oklch,var(--color-surface)_92%,transparent)] backdrop-blur-xl">
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-line)] bg-[color-mix(in_oklch,var(--color-surface)_94%,transparent)] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
       <audio
         ref={audioRef}
         src={track.src}
@@ -83,7 +83,7 @@ export function PlayerBar() {
         onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
         onEnded={() => setPlaying(false)}
       />
-      <div className="mx-auto flex max-w-[1600px] items-center gap-4 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex h-[var(--player-height)] max-w-[1800px] items-center gap-3 px-3 sm:gap-4 sm:px-6">
         <Button
           variant="primary"
           size="icon"
@@ -94,7 +94,7 @@ export function PlayerBar() {
           {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-[1px]" />}
         </Button>
 
-        <div className="hidden min-w-0 sm:block sm:w-52">
+        <div className="min-w-0 flex-1 sm:w-52 sm:flex-none">
           <Link
             href={`/generations/${track.id}`}
             className="block truncate text-sm font-medium hover:text-[var(--color-accent)]"
@@ -104,7 +104,7 @@ export function PlayerBar() {
           <p className="truncate text-xs text-[var(--color-ink-faint)]">{track.style}</p>
         </div>
 
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="hidden min-w-0 flex-1 items-center gap-3 sm:flex">
           <span className="w-10 shrink-0 text-right text-xs tabular-nums text-[var(--color-ink-faint)]">
             {formatDuration(currentTime)}
           </span>
@@ -137,7 +137,7 @@ export function PlayerBar() {
           />
         </div>
 
-        <Button variant="ghost" size="icon" asChild aria-label="Download">
+        <Button variant="ghost" size="icon" asChild aria-label="Download" className="hidden sm:inline-flex">
           <a href={api.downloadUrl(track.id)} download>
             <Download className="h-4 w-4" />
           </a>

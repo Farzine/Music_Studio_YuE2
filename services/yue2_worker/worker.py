@@ -69,12 +69,12 @@ def configure_logging() -> None:
     root.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 
-def build_backend(settings, manager: ModelManager):
+def build_backend(settings, manager: ModelManager, store=None):
     name = settings.yue2_backend
     if name == "native":
         from services.yue2_worker.adapters.yue2_native import NativeYuE2Backend
 
-        return NativeYuE2Backend(settings, manager)
+        return NativeYuE2Backend(settings, manager, store=store)
     if name == "mock":
         from services.yue2_worker.adapters.mock import MockBackend
 
@@ -86,34 +86,56 @@ def build_backend(settings, manager: ModelManager):
     raise ValueError(f"unknown backend {name!r}")
 
 
-def gpu_snapshot() -> dict:
+def gpu_snapshot(active_index: int | None = None) -> dict:
+    """Every device this process can address, plus the one it is using.
+
+    The worker's view is what matters for device selection: CUDA_VISIBLE_DEVICES
+    can hide cards from it that the API's NVML query still sees.
+    """
     try:
         import torch
 
         if not torch.cuda.is_available():
-            return {"available": False}
-        index = torch.cuda.current_device()
-        properties = torch.cuda.get_device_properties(index)
-        free, total = torch.cuda.mem_get_info(index)
-        return {
-            "available": True,
-            "index": index,
-            "name": properties.name,
-            "total_bytes": int(total),
-            "free_bytes": int(free),
-            "peak_allocated_bytes": int(torch.cuda.max_memory_allocated(index)),
-            "compute_capability": f"{properties.major}.{properties.minor}",
-        }
+            return {"available": False, "devices": []}
+        current = torch.cuda.current_device() if active_index is None else active_index
+        devices = []
+        for index in range(torch.cuda.device_count()):
+            properties = torch.cuda.get_device_properties(index)
+            free, total = torch.cuda.mem_get_info(index)
+            devices.append(
+                {
+                    "index": index,
+                    "name": properties.name,
+                    "total_bytes": int(total),
+                    "free_bytes": int(free),
+                    "compute_capability": f"{properties.major}.{properties.minor}",
+                    "bf16_supported": bool(properties.major >= 8),
+                }
+            )
+        snapshot = {"available": True, "devices": devices, "active_index": current}
+        for device in devices:
+            if device["index"] == current:
+                snapshot.update(
+                    {
+                        "index": current,
+                        "name": device["name"],
+                        "total_bytes": device["total_bytes"],
+                        "free_bytes": device["free_bytes"],
+                        "compute_capability": device["compute_capability"],
+                        "peak_allocated_bytes": int(torch.cuda.max_memory_allocated(current)),
+                    }
+                )
+        return snapshot
     except Exception as exc:
-        return {"available": False, "error": str(exc)}
+        return {"available": False, "devices": [], "error": str(exc)}
 
 
-def reset_gpu_peak() -> None:
+def reset_gpu_peak(index: int | None = None) -> None:
     try:
         import torch
 
         if torch.cuda.is_available():
-            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.reset_peak_memory_stats(index)
     except Exception:
         pass
 
@@ -123,8 +145,8 @@ class Worker:
         self.settings = get_settings()
         self.store = Store(self.settings)
         self.queue = FilesystemJobQueue(self.store, max_concurrent_gpu_jobs=self.settings.max_concurrent_gpu_jobs)
-        self.manager = ModelManager(self.settings)
-        self.backend = build_backend(self.settings, self.manager)
+        self.manager = ModelManager(self.settings, store=self.store)
+        self.backend = build_backend(self.settings, self.manager, store=self.store)
         self.worker_id = self.settings.worker_id
         self.once = once
         self._stop = asyncio.Event()
@@ -146,7 +168,7 @@ class Worker:
             "max_concurrent_gpu_jobs": self.settings.max_concurrent_gpu_jobs,
             "model": self.manager.state(),
             "runtime": self.manager.runtime_versions(),
-            "gpu": gpu_snapshot(),
+            "gpu": gpu_snapshot(self.manager.device_index),
             "pid": os.getpid(),
         }
         write_json_atomic(self.heartbeat_path, payload)
@@ -195,7 +217,7 @@ class Worker:
             job_id=job.id, config=job.config, reporter=reporter, cancel_event=cancel_event
         )
         started = time.perf_counter()
-        reset_gpu_peak()
+        reset_gpu_peak(self.manager.device_index)
         try:
             warnings = await self.backend.validate_config(job.config)
             for message in warnings:
@@ -240,7 +262,7 @@ class Worker:
             job.timing.synthesis_seconds = round(float(tokens.timing.get("synthesis_seconds", 0.0)), 3)
             job.timing.decode_seconds = round(float(audio.timing.get("decode_seconds", 0.0)), 3)
             job.timing.output_seconds = audio_artifact.duration_seconds if audio_artifact else None
-            snapshot = gpu_snapshot()
+            snapshot = gpu_snapshot(self.manager.device_index)
             job.timing.gpu_peak_bytes = snapshot.get("peak_allocated_bytes")
 
             if plan.truncated:

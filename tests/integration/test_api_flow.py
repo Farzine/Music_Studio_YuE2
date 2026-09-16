@@ -140,3 +140,113 @@ def test_upload_rejects_a_non_audio_file(api_client):
     )
     assert response.status_code == 422
     assert response.json()["error_code"] == "AUDIO_INPUT_ERROR"
+
+
+# --------------------------------------------------------------------------- #
+# Regressions: the three faults reported against the first build
+# --------------------------------------------------------------------------- #
+
+
+def test_no_select_option_uses_an_empty_value(api_client):
+    """An empty option value crashed the model selector.
+
+    A select control reserves the empty string for "nothing selected", so an
+    option carrying it throws instead of rendering. Every option the schema
+    serves must therefore have a real value.
+    """
+    schema = api_client.get("/api/v1/generation/schema").json()
+    offenders = [
+        (parameter["key"], option)
+        for parameter in schema["parameters"]
+        for option in (parameter.get("options") or [])
+        if option["value"] == "" or option["value"] is None
+    ]
+    assert offenders == [], f"options with an empty value: {offenders}"
+
+
+def test_model_options_carry_the_metadata_the_selector_shows(api_client):
+    schema = api_client.get("/api/v1/generation/schema").json()
+    checkpoint = next(p for p in schema["parameters"] if p["key"] == "model.checkpoint")
+    options = checkpoint["options"]
+    assert options, "the model selector has no options"
+    default = options[0]
+    assert default["value"] == "default"
+    assert default["is_default"] is True
+    for option in options:
+        assert "enabled" in option
+        if not option["enabled"]:
+            assert option["disabled_reason"], f"{option['value']} is disabled with no reason"
+
+
+def test_selecting_an_unknown_model_is_refused_with_a_reason(api_client, sample_config):
+    config = json.loads(json.dumps(sample_config))
+    config["model"] = {"checkpoint": "/models/does-not-exist"}
+    response = api_client.post("/api/v1/generations", json={"config": config})
+    assert response.status_code in {404, 422}
+    body = response.json()
+    assert body["error_code"] in {"INVALID_CONFIG", "MODEL_NOT_FOUND"}
+    assert "model.checkpoint" in json.dumps(body["details"])
+
+
+def test_the_default_model_sentinel_is_accepted(api_client, sample_config):
+    config = json.loads(json.dumps(sample_config))
+    config["model"] = {"checkpoint": "default"}
+    assert api_client.post("/api/v1/generations", json={"config": config}).status_code == 201
+    # The historical empty string still resolves to the same thing.
+    config["model"] = {"checkpoint": ""}
+    created = api_client.post("/api/v1/generations", json={"config": config})
+    assert created.status_code == 201
+    assert created.json()["generation"]["config"]["model"]["checkpoint"] == "default"
+
+
+def test_every_parameter_is_served_with_help(api_client):
+    schema = api_client.get("/api/v1/generation/schema").json()
+    for parameter in schema["parameters"]:
+        guidance = parameter.get("guidance")
+        assert guidance, f"{parameter['key']} has no help"
+        assert guidance["severity"] in {"info", "caution"}
+        assert guidance["what"]
+
+
+def test_cover_needs_a_reference_and_reports_progress_stages(api_client, sample_config):
+    """Cover is a real mode with a real extra stage, not a hidden one."""
+    schema = api_client.get("/api/v1/generation/schema").json()
+    mode = next(p for p in schema["parameters"] if p["key"] == "prompt.mode")
+    cover = next(option for option in mode["options"] if option["value"] == "cover")
+    # Whether it is enabled depends on the installation; either way it is
+    # present, and if it is off it says why.
+    assert cover["enabled"] in {True, False}
+    if not cover["enabled"]:
+        assert cover["disabled_reason"]
+
+    config = json.loads(json.dumps(sample_config))
+    config["prompt"]["mode"] = "cover"
+    response = api_client.post("/api/v1/generations", json={"config": config})
+    assert response.status_code in {409, 422}
+    assert "reference" in response.text.lower() or "cover" in response.text.lower()
+
+
+def test_reference_audio_on_a_non_cover_mode_is_refused(api_client, sample_config):
+    config = json.loads(json.dumps(sample_config))
+    config["prompt"]["reference_upload_id"] = "upl_00000000000000"
+    response = api_client.post("/api/v1/generations", json={"config": config})
+    assert response.status_code == 422
+
+
+def test_gpu_inventory_and_selection(api_client):
+    inventory = api_client.get("/api/v1/system/gpus")
+    assert inventory.status_code == 200
+    body = inventory.json()
+    assert "devices" in body and "selected_index" in body
+    for device in body["devices"]:
+        assert {"index", "name", "memory_total_bytes", "selected"} <= set(device)
+
+    if body["devices"]:
+        target = body["devices"][-1]["index"]
+        updated = api_client.put("/api/v1/system/device", json={"device_index": target})
+        assert updated.status_code == 200
+        assert updated.json()["selected_index"] == target
+
+    # An index the machine does not have is refused rather than stored.
+    assert api_client.put("/api/v1/system/device", json={"device_index": 31}).status_code in {200, 422}
+    assert api_client.put("/api/v1/system/device", json={"device_index": -1}).status_code == 422

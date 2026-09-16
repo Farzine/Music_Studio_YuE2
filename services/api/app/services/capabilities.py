@@ -8,6 +8,7 @@ offers a mode that would fail at generation time.
 from __future__ import annotations
 
 import copy
+import json
 import shutil
 import subprocess
 from functools import lru_cache
@@ -18,8 +19,8 @@ from yue2_studio_core.parameters import backend_capabilities, describe_registry
 from yue2_studio_core.settings import Settings
 
 
-def _ffmpeg_version() -> tuple[str | None, tuple[int, int] | None]:
-    binary = shutil.which("ffmpeg")
+def _ffmpeg_version(binary: str | None = None) -> tuple[str | None, tuple[int, int] | None]:
+    binary = binary or shutil.which("ffmpeg")
     if not binary:
         return None, None
     try:
@@ -62,43 +63,103 @@ class CapabilityService:
 
     # -- probes ----------------------------------------------------------- #
 
+    @staticmethod
+    def _describe_model(reference: str, role: str, *, is_default: bool = False) -> dict[str, Any]:
+        path = Path(reference)
+        present = path.is_dir()
+        weights = path / "model.safetensors"
+        config = path / "config.json"
+        complete = present and weights.is_file() and config.is_file()
+        problem = None
+        if not present:
+            problem = "The directory does not exist."
+        elif not config.is_file():
+            problem = "The directory has no config.json."
+        elif not weights.is_file():
+            problem = "The directory has no model.safetensors."
+        return {
+            "id": reference,
+            "role": role,
+            "label": path.name if present else reference,
+            "path": str(path) if present else None,
+            "present": complete,
+            "is_local": present,
+            "is_default": is_default,
+            "bytes": weights.stat().st_size if weights.is_file() else None,
+            "problem": problem,
+        }
+
     def local_models(self) -> list[dict[str, Any]]:
-        """Model directories that are actually present, with their size."""
+        """Every model and decoder directory the studio knows about.
+
+        Entries that are missing or incomplete are still listed, with the
+        specific reason, so the selector can explain rather than simply omit.
+        """
         entries: list[dict[str, Any]] = []
         seen: set[str] = set()
         candidates = [
-            ("model", self.settings.model_reference),
-            ("vae", self.settings.vae_reference),
-            ("vae", self.settings.vae_legacy_reference),
+            ("model", self.settings.model_reference, True),
+            ("vae", self.settings.vae_reference, True),
+            ("vae", self.settings.vae_legacy_reference, False),
         ]
-        for role, reference in candidates:
-            path = Path(reference)
-            present = path.is_dir()
+        for role, reference, is_default in candidates:
             if reference in seen:
                 continue
             seen.add(reference)
-            weights = path / "model.safetensors"
-            entries.append(
-                {
-                    "id": reference,
-                    "role": role,
-                    "label": path.name if present else reference,
-                    "path": str(path) if present else None,
-                    "present": present,
-                    "is_local": present,
-                    "bytes": weights.stat().st_size if weights.is_file() else None,
-                }
-            )
+            entries.append(self._describe_model(reference, role, is_default=is_default))
+
+        # Any sibling directory that looks like a model is offered too, so a
+        # second checkpoint can be dropped in without editing configuration.
+        model_root = Path(self.settings.model_reference).parent
+        if model_root.is_dir():
+            for directory in sorted(model_root.iterdir()):
+                reference = str(directory)
+                if reference in seen or not directory.is_dir():
+                    continue
+                if not (directory / "config.json").is_file():
+                    continue
+                kind = None
+                try:
+                    kind = json.loads((directory / "config.json").read_text()).get("model_type")
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if kind not in {"yue2", "yue2_vae"}:
+                    continue
+                seen.add(reference)
+                entries.append(self._describe_model(reference, "model" if kind == "yue2" else "vae"))
         return entries
 
-    @lru_cache(maxsize=1)  # noqa: B019 - one process-lifetime probe is intended
+    def resolve_model_choice(self, checkpoint: str) -> dict[str, Any] | None:
+        """The inventory entry a configuration refers to, or None if unknown."""
+        from yue2_studio_core.models import DEFAULT_MODEL
+
+        if checkpoint == DEFAULT_MODEL:
+            return self._describe_model(self.settings.model_reference, "model", is_default=True)
+        for entry in self.local_models():
+            if entry["id"] == checkpoint:
+                return entry
+        return None
+
     def runtime_probe(self) -> dict:
-        ffmpeg_version, ffmpeg_parts = _ffmpeg_version()
+        """What is actually installed on this machine, checked each time.
+
+        Not cached: the cover workflow can be installed while the API is
+        running, and the System page should notice without a restart.
+        """
+        ffmpeg_binary = self.settings.ffmpeg_path
+        ffmpeg_version, ffmpeg_parts = _ffmpeg_version(str(ffmpeg_binary) if ffmpeg_binary.is_file() else None)
         worker_venv = Path(self.settings._resolve(".venv-yue2"))
+        sheetsage2_model = self.settings.sheetsage2_path
         compute = _compute_capability()
         return {
-            "ffmpeg": {"version": ffmpeg_version, "parts": ffmpeg_parts, "present": ffmpeg_version is not None},
-            "sheetsage2_present": self.settings.sheetsage2_path.is_dir(),
+            "ffmpeg": {
+                "version": ffmpeg_version,
+                "parts": ffmpeg_parts,
+                "present": ffmpeg_version is not None,
+                "path": str(ffmpeg_binary) if ffmpeg_binary.is_file() else None,
+            },
+            "sheetsage2_present": (sheetsage2_model / "model.safetensors").is_file(),
+            "sheetsage2_env": self.settings.sheetsage2_python.is_file(),
             "vae_legacy_present": Path(self.settings.vae_legacy_reference).is_dir(),
             "model_present": Path(self.settings.model_reference).is_dir(),
             "vae_present": Path(self.settings.vae_reference).is_dir(),
@@ -135,16 +196,29 @@ class CapabilityService:
             set_state(
                 "cover",
                 False,
-                f"SheetSage2 is not installed at {self.settings.sheetsage2_path}. See docs/cover-workflow.md.",
+                f"SheetSage2 weights are not installed at {self.settings.sheetsage2_path}. "
+                "Run scripts/setup_cover.sh.",
+            )
+        elif not probe["sheetsage2_env"]:
+            set_state(
+                "cover",
+                False,
+                f"The SheetSage2 environment is missing at {self.settings.sheetsage2_python.parent.parent}. "
+                "Run scripts/setup_cover.sh.",
             )
         elif not ffmpeg_ok:
             set_state(
                 "cover",
                 False,
-                f"SheetSage2 requires FFmpeg 6.1 or newer; this machine has {probe['ffmpeg']['version'] or 'none'}.",
+                f"SheetSage2 needs FFmpeg 6.1 or newer; the one found is {probe['ffmpeg']['version'] or 'missing'}. "
+                "Run scripts/setup_cover.sh to install a private build.",
             )
         else:
-            set_state("cover", True)
+            set_state(
+                "cover",
+                True,
+                note="Transcription is an estimate of the recording, not an exact copy of it.",
+            )
 
         set_state(
             "output_mp3",
@@ -188,11 +262,36 @@ class CapabilityService:
         return document
 
     def schema(self, backend: str | None = None) -> dict:
+        from yue2_studio_core.models import DEFAULT_MODEL
+
         capabilities = self.capabilities(backend)
+        default = self._describe_model(self.settings.model_reference, "model", is_default=True)
         options = [
-            {"value": entry["id"], "label": entry["label"], "enabled": entry["present"], "role": entry["role"]}
-            for entry in capabilities["models"]
-            if entry["role"] == "model"
+            {
+                "value": DEFAULT_MODEL,
+                "label": f"Default — {default['label']}",
+                "enabled": default["present"],
+                "disabled_reason": default["problem"],
+                "role": "model",
+                "bytes": default["bytes"],
+                "path": default["path"],
+                "is_default": True,
+                "help": "Uses the model configured in .env.",
+            }
         ]
-        options.insert(0, {"value": "", "label": "Default (from .env)", "enabled": True, "role": "model"})
+        for entry in capabilities["models"]:
+            if entry["role"] != "model" or entry["is_default"]:
+                continue
+            options.append(
+                {
+                    "value": entry["id"],
+                    "label": entry["label"],
+                    "enabled": entry["present"],
+                    "disabled_reason": entry["problem"],
+                    "role": "model",
+                    "bytes": entry["bytes"],
+                    "path": entry["path"],
+                    "is_default": False,
+                }
+            )
         return describe_registry(copy.deepcopy(capabilities), {"models": options})

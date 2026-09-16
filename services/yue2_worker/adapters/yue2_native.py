@@ -27,7 +27,10 @@ from yue2_studio_core.errors import ErrorCode, StudioError
 from yue2_studio_core.models import GenerationConfig, GenerationMode, JobStatus
 from yue2_studio_core.settings import Settings
 
+from yue2_studio_core.store import Store
+
 from ..model_manager.manager import ModelManager
+from .transcription import SheetSage2Transcriber
 from .base import (
     AudioTokensResult,
     BackendResult,
@@ -129,9 +132,16 @@ class NativeYuE2Backend:
 
     name = "native"
 
-    def __init__(self, settings: Settings, manager: ModelManager | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        manager: ModelManager | None = None,
+        store: Store | None = None,
+    ) -> None:
         self.settings = settings
-        self.manager = manager or ModelManager(settings)
+        self.store = store or Store(settings)
+        self.manager = manager or ModelManager(settings, store=self.store)
+        self.transcriber = SheetSage2Transcriber(settings)
         self._pipeline: Any = None
         self._request: Any = None
         self._effective_config: dict | None = None
@@ -142,10 +152,13 @@ class NativeYuE2Backend:
 
     async def get_capabilities(self) -> dict:
         state = self.manager.state()
+        cover_ok, cover_reason = self.transcriber.available()
+        modes = ["full", "melody", "off", "score_edit"] + (["cover"] if cover_ok else [])
         return {
             "backend": self.name,
-            "modes": ["full", "melody", "off", "score_edit"],
+            "modes": modes,
             "model": state,
+            "cover": {"supported": cover_ok, "reason": cover_reason},
             "runtime": self.manager.runtime_versions(),
         }
 
@@ -161,17 +174,69 @@ class NativeYuE2Backend:
                 details={"parameters": sorted(unsupported)},
             )
         if config.prompt.mode is GenerationMode.COVER:
-            raise StudioError(
-                ErrorCode.UNSUPPORTED_CAPABILITY,
-                "The cover workflow needs the SheetSage2 transcription service.",
-                stage="validation",
+            available, reason = self.transcriber.available()
+            if not available:
+                raise StudioError(
+                    ErrorCode.UNSUPPORTED_CAPABILITY,
+                    reason or "The cover workflow needs the SheetSage2 transcription service.",
+                    stage="validation",
+                )
+            if not config.prompt.reference_upload_id:
+                raise StudioError(
+                    ErrorCode.AUDIO_INPUT_ERROR,
+                    "Cover mode needs a reference recording to transcribe.",
+                    stage="validation",
+                )
+            warnings.append(
+                "The melody is transcribed from your reference. Transcription is an estimate, and its "
+                "mistakes carry into the cover — review the score afterwards."
             )
         await asyncio.to_thread(self.manager.verify_files, config)
         return warnings
 
     # -- stages ------------------------------------------------------------ #
 
+    async def _transcribe_reference(self, config: GenerationConfig, context: GenerationContext) -> str:
+        """Turn the reference recording into a melody score.
+
+        Runs before the YuE2 weights are loaded so the two models are not
+        resident on the same card at the same time.
+        """
+        upload = self.store.get_upload(config.prompt.reference_upload_id or "")
+        audio_path = self.store.absolute(upload.path)
+        output_dir = self.store.generation_dir(
+            self.store.get_job(context.job_id).project_id, context.job_id
+        ) / "score" / "transcription"
+
+        context.reporter.begin(
+            JobStatus.TRANSCRIBING, "transcribing", "Transcribing reference audio", unit="windows"
+        )
+
+        def _run():
+            return self.transcriber.transcribe(
+                audio_path,
+                output_dir,
+                device_index=self.manager.device_index,
+                cancelled=context.cancelled,
+                on_progress=lambda completed, total: context.reporter.update(completed, total=total),
+            )
+
+        result = await asyncio.to_thread(_run)
+        for warning in result.warnings:
+            context.reporter.note(f"Transcription: {warning}", severity="WARNING")
+        context.reporter.note(
+            f"Transcribed {result.duration_seconds:.0f}s of reference audio in "
+            f"{result.elapsed_seconds:.0f}s."
+            if result.duration_seconds and result.elapsed_seconds
+            else "Reference audio transcribed."
+        )
+        return result.abc
+
     async def prepare(self, config: GenerationConfig, context: GenerationContext) -> None:
+        transcribed_abc: str | None = None
+        if config.prompt.mode is GenerationMode.COVER:
+            transcribed_abc = await self._transcribe_reference(config, context)
+
         def _load():
             pipeline, loaded_now = self.manager.acquire(config)
             _install_reporter(pipeline, context.reporter)
@@ -191,12 +256,15 @@ class NativeYuE2Backend:
         # Sampling travels with the request. A resident pipeline must never
         # apply the previous job's token budget to this one.
         self._planner_sampling, self._semantic_sampling = self.manager.native_sampling(config)
+        # A cover's score comes from the transcription; every other mode uses
+        # whatever score the request carried, if any.
+        score = transcribed_abc if transcribed_abc is not None else config.prompt.abc
         self._request = SongRequest(
             style=config.prompt.style,
             lyrics=config.prompt.lyrics,
             cot=config.prompt.mode.cot,
             seed=config.sampling.seed,
-            abc=config.prompt.abc.strip() or None,
+            abc=(score or "").strip() or None,
             cfg_scale=config.synthesis.cfg_scale,
             id=context.job_id,
         )

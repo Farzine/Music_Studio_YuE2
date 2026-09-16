@@ -210,3 +210,83 @@ def test_state_survives_a_restart(api_client, sample_config, data_dir):
     reopened = fresh.get_job(job_id)
     assert reopened.status is JobStatus.COMPLETED
     assert fresh.absolute(reopened.audio_artifact().path).is_file()
+
+
+# --------------------------------------------------------------------------- #
+# Deletion
+# --------------------------------------------------------------------------- #
+
+
+def test_deleting_a_generation_removes_its_files_and_nothing_else(api_client, sample_config):
+    keep = api_client.post("/api/v1/generations", json={"title": "keep", "config": sample_config}).json()
+    run_worker_once()
+    doomed = api_client.post("/api/v1/generations", json={"title": "doomed", "config": sample_config}).json()
+    run_worker_once()
+
+    store = Store()
+    keep_id = keep["generation"]["id"]
+    doomed_id = doomed["generation"]["id"]
+    doomed_dir = store.generation_dir(doomed["generation"]["project_id"], doomed_id)
+    keep_dir = store.generation_dir(keep["generation"]["project_id"], keep_id)
+    assert doomed_dir.is_dir() and keep_dir.is_dir()
+
+    response = api_client.delete(f"/api/v1/generations/{doomed_id}")
+    assert response.status_code == 200
+    report = response.json()
+    assert report["deleted"] is True
+    assert report["complete"] is True
+    assert report["artifacts_removed"] > 0
+    assert report["failures"] == []
+
+    # Gone from disk and from the index.
+    assert not doomed_dir.exists()
+    assert not store.job_path(doomed_id).exists()
+    assert api_client.get(f"/api/v1/generations/{doomed_id}").status_code == 404
+
+    # The other generation is untouched.
+    assert keep_dir.is_dir()
+    assert api_client.get(f"/api/v1/generations/{keep_id}").status_code == 200
+    assert store.absolute(store.get_job(keep_id).audio_artifact().path).is_file()
+
+
+def test_deleting_leaves_no_orphan_files(api_client, sample_config):
+    created = api_client.post("/api/v1/generations", json={"config": sample_config}).json()
+    run_worker_once()
+    generation = created["generation"]
+    store = Store()
+    directory = store.generation_dir(generation["project_id"], generation["id"])
+    assert list(directory.rglob("*"))
+
+    api_client.delete(f"/api/v1/generations/{generation['id']}")
+
+    leftovers = [
+        path
+        for path in store.root.rglob("*")
+        if generation["id"] in path.name or generation["id"] in str(path.parent)
+    ]
+    assert leftovers == [], f"orphans left behind: {leftovers}"
+
+
+def test_a_running_generation_cannot_be_deleted(api_client, sample_config):
+    created = api_client.post("/api/v1/generations", json={"config": sample_config}).json()
+    response = api_client.delete(f"/api/v1/generations/{created['generation']['id']}")
+    assert response.status_code == 409
+    assert "cancel" in response.json()["error_message"].lower()
+
+
+def test_deleting_the_current_generation_repoints_the_project(api_client, sample_config):
+    first = api_client.post("/api/v1/generations", json={"config": sample_config}).json()
+    run_worker_once()
+    project_id = first["project"]["id"]
+    second = api_client.post(
+        "/api/v1/generations", json={"project_id": project_id, "config": sample_config}
+    ).json()
+    run_worker_once()
+
+    store = Store()
+    assert store.get_project(project_id).current_generation_id == second["generation"]["id"]
+
+    api_client.delete(f"/api/v1/generations/{second['generation']['id']}")
+    # The project falls back to the remaining generation rather than pointing
+    # at something that no longer exists.
+    assert store.get_project(project_id).current_generation_id == first["generation"]["id"]

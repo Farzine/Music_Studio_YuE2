@@ -1,74 +1,177 @@
 @import "tailwindcss";
 
-/* ---------------------------------------------------------------------------
-   Dark-first studio palette. One accent, generous neutrals, no gradients doing
-   the work of hierarchy.
---------------------------------------------------------------------------- */
+/* ===========================================================================
+   Design system
+   ---------------------------------------------------------------------------
+   One token set for the whole application. Components never invent a colour,
+   a radius or a duration; they reference these. Changing a value here changes
+   it everywhere, which is what keeps the pages looking like one product.
+   =========================================================================== */
 @theme {
-  --color-canvas: oklch(0.16 0.012 275);
-  --color-surface: oklch(0.2 0.014 275);
-  --color-surface-2: oklch(0.245 0.016 275);
-  --color-line: oklch(0.31 0.018 275);
-  --color-ink: oklch(0.97 0.004 275);
-  --color-ink-muted: oklch(0.72 0.014 275);
-  --color-ink-faint: oklch(0.56 0.014 275);
-  --color-accent: oklch(0.72 0.17 152);
-  --color-accent-ink: oklch(0.18 0.03 152);
-  --color-warn: oklch(0.79 0.15 78);
-  --color-danger: oklch(0.66 0.19 22);
-  --color-info: oklch(0.72 0.13 245);
+  /* --- Surfaces: a dark studio palette with four clear depth levels ------ */
+  --color-canvas: oklch(0.155 0.011 268);
+  --color-surface: oklch(0.196 0.013 268);
+  --color-surface-2: oklch(0.238 0.015 268);
+  --color-surface-3: oklch(0.283 0.017 268);
+  --color-overlay: oklch(0.12 0.01 268 / 0.72);
 
-  --radius-card: 1rem;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* --- Lines ------------------------------------------------------------- */
+  --color-line: oklch(0.31 0.016 268);
+  --color-line-strong: oklch(0.4 0.02 268);
+
+  /* --- Text: three weights, used consistently ---------------------------- */
+  --color-ink: oklch(0.975 0.004 268);
+  --color-ink-muted: oklch(0.755 0.014 268);
+  --color-ink-faint: oklch(0.6 0.015 268);
+
+  /* --- Accent and status ------------------------------------------------- */
+  --color-accent: oklch(0.76 0.158 158);
+  --color-accent-strong: oklch(0.82 0.165 158);
+  --color-accent-ink: oklch(0.19 0.04 158);
+  --color-accent-soft: oklch(0.76 0.158 158 / 0.14);
+
+  --color-success: oklch(0.76 0.158 158);
+  --color-warn: oklch(0.81 0.143 80);
+  --color-warn-soft: oklch(0.81 0.143 80 / 0.14);
+  --color-danger: oklch(0.68 0.19 20);
+  --color-danger-soft: oklch(0.68 0.19 20 / 0.14);
+  --color-info: oklch(0.74 0.12 248);
+  --color-info-soft: oklch(0.74 0.12 248 / 0.14);
+
+  /* --- Radius ------------------------------------------------------------ */
+  --radius-xs: 0.375rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-full: 999px;
+
+  /* --- Elevation: low contrast, used sparingly --------------------------- */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-md: 0 4px 16px -4px oklch(0 0 0 / 0.4);
+  --shadow-lg: 0 16px 48px -12px oklch(0 0 0 / 0.55);
+  --shadow-accent: 0 6px 24px -8px oklch(0.76 0.158 158 / 0.5);
+
+  /* --- Motion ------------------------------------------------------------ */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* --- Typography -------------------------------------------------------- */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+
+  /* --- Layout ------------------------------------------------------------ */
+  --sidebar-width: 15rem;
+  --player-height: 4.75rem;
+  --mobile-nav-height: 3.75rem;
 }
 
-* {
+/* ===========================================================================
+   Base
+   =========================================================================== */
+*,
+*::before,
+*::after {
   border-color: var(--color-line);
 }
 
-html,
+html {
+  color-scheme: dark;
+}
+
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* Nothing should ever scroll sideways. */
+  overflow-x: hidden;
 }
 
-/* Keyboard users must always see where they are. */
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
 }
 
 ::selection {
-  background: color-mix(in oklch, var(--color-accent) 40%, transparent);
+  background: color-mix(in oklch, var(--color-accent) 35%, transparent);
+  color: var(--color-ink);
 }
 
-/* Scrollbars that do not shout. */
+/* Inputs inherit the type scale rather than the browser's defaults. */
+input,
+textarea,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* A 16px minimum on mobile stops iOS zooming the viewport on focus. */
+@media (max-width: 640px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-line) transparent;
+  scrollbar-color: var(--color-line-strong) transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--color-line);
-  border-radius: 999px;
+  background: var(--color-line-strong);
+  border-radius: var(--radius-full);
   border: 3px solid transparent;
   background-clip: content-box;
 }
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-faint);
+  background-clip: content-box;
+}
 
+/* ===========================================================================
+   Utilities
+   =========================================================================== */
+@utility surface-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+}
+
+@utility text-balance-tight {
+  text-wrap: balance;
+}
+
+/* Long content that genuinely cannot wrap scrolls in its own box, so the page
+   body never does. */
+@utility scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* ===========================================================================
+   Animation
+   =========================================================================== */
 @keyframes shimmer {
-  100% { transform: translateX(100%); }
+  100% {
+    transform: translateX(100%);
+  }
 }
 .skeleton {
   position: relative;
   overflow: hidden;
   background: var(--color-surface-2);
+  border-radius: var(--radius-md);
 }
 .skeleton::after {
   content: "";
@@ -78,18 +181,84 @@ body {
   background-image: linear-gradient(
     90deg,
     transparent,
-    color-mix(in oklch, var(--color-ink) 6%, transparent),
+    color-mix(in oklch, var(--color-ink) 7%, transparent),
     transparent
   );
   animation: shimmer 1.6s infinite;
 }
 
-@keyframes pulse-ring {
-  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-accent) 45%, transparent); }
-  70% { box-shadow: 0 0 0 10px transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }
-.pulse-ring { animation: pulse-ring 2s infinite; }
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in var(--duration-base) var(--ease-out);
+}
+.animate-slide-up {
+  animation: slide-up var(--duration-base) var(--ease-out);
+}
+.animate-sheet-up {
+  animation: sheet-up var(--duration-slow) var(--ease-out);
+}
+
+/* Radix sets data-state on its portals; one rule covers every overlay. */
+[data-state="open"].overlay-content {
+  animation: zoom-in var(--duration-fast) var(--ease-out);
+}
+[data-side="top"].popover-content {
+  animation: slide-up var(--duration-fast) var(--ease-out);
+}
+[data-side="bottom"].popover-content {
+  animation: slide-down var(--duration-fast) var(--ease-out);
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+.accordion-content[data-state="open"] {
+  animation: accordion-down var(--duration-base) var(--ease-out);
+}
+.accordion-content[data-state="closed"] {
+  animation: accordion-up var(--duration-fast) var(--ease-out);
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -98,5 +267,6 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

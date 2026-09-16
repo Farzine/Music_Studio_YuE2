@@ -72,6 +72,7 @@ data/
       score/score.json
       intermediates/latent.npy semantic.npy
       logs/generation.log    one JSON object per line
+  runtime-settings.json      user settings changed from the UI (selected GPU)
   jobs/<job-id>.json         queue and status
   jobs/<job-id>.cancel       cancellation marker (see below)
   jobs/.queue.lock           advisory lock
@@ -100,7 +101,7 @@ filesystem directly.
 ## Job state machine
 
 ```text
-DRAFT ─► QUEUED ─► LOADING_MODEL ─► PLANNING ─► GENERATING ─► DECODING
+DRAFT ─► QUEUED ─► LOADING_MODEL ─► [TRANSCRIBING] ─► PLANNING ─► GENERATING ─► DECODING
                                                                  │
                                                                  ▼
                                                         POST_PROCESSING
@@ -112,6 +113,10 @@ any active state ─► FAILED
 QUEUED           ─► CANCELLED           (nothing started; immediate)
 active           ─► CANCEL_REQUESTED ─► CANCELLED
 ```
+
+`TRANSCRIBING` occurs only for covers, where the reference recording is turned
+into a melody score before the YuE2 weights are loaded, so the two models are
+never resident on the same card at once.
 
 `ALLOWED_TRANSITIONS` in `packages/core/yue2_studio_core/models.py` is the only
 definition of this; the API and the worker both check against it.
@@ -154,6 +159,13 @@ async def shutdown()
 | `mock` | No GPU. Exercises the whole application; labels itself as mock in every manifest. |
 | `comfy_workflow` | Compatibility layer. Patches `yue2_full.json` from the generated mapping and submits it to a ComfyUI server. |
 
+The native adapter also drives `services/sheetsage2_worker`, a transcription
+service in its own environment. SheetSage2 pins torch 2.8.0 and transformers
+4.45.2 against YuE2's 2.10.0 and 4.57.6, so it runs as a subprocess and the two
+exchange a JSON report and a score file. It is launched with an argument list,
+never a shell string, and pinned to the selected card with
+`CUDA_VISIBLE_DEVICES`.
+
 Blocking GPU calls run through `asyncio.to_thread`, so the worker's event loop
 keeps servicing its heartbeat and cancellation watcher while the GPU is busy.
 
@@ -171,8 +183,15 @@ real totals for `Synthesizing audio` (solver steps) and `Decoding audio`
 ## Model lifecycle
 
 `ModelManager` keys the resident pipeline on everything that would force a
-rebuild: model, revision, decoder, backend, quantization, AR offload, memory
-budget, offline flag, decoder tile size and solver steps. A job whose key
+rebuild: **device index**, model, revision, decoder, backend, quantization, AR
+offload, memory budget, offline flag, decoder tile size and solver steps.
+Sampling is deliberately *not* in the key — it travels with each request, so
+changing a temperature never reloads 7 GB, and a resident pipeline can never
+apply a previous job's token budget to the next one.
+
+The device index is read fresh from `data/runtime-settings.json` on every job,
+which is how the System page can move the model to another GPU without a
+restart. A job whose key
 matches reuses the loaded model; a job that differs tears the old one down
 first. `MODEL_IDLE_UNLOAD_SECONDS=0` (the default) keeps it resident forever.
 File existence and `config.json`/`model.safetensors` presence are checked before

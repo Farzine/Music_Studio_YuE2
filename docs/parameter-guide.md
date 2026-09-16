@@ -1,8 +1,26 @@
 # Parameter guide
 
-Every control, in plain language. The application serves the same information at
-`GET /api/v1/generation/schema`, which is what the form is built from — this
-page is the prose version of `configs/parameter-registry.json`.
+Every control, in plain language.
+
+You do not need this page to use the application: the same explanations are
+served with the schema and appear in the interface behind the small icon beside
+each label. Hover it on a desktop, tap it on a phone, or reach it with the
+keyboard — one component handles all three, so the behaviour is identical
+everywhere.
+
+* **ⓘ** — ordinary information.
+* **⚠** — an unusual value here genuinely destabilises output, inflates VRAM or
+  lengthens a run. Seventeen of the forty-six settings carry it; the rest do
+  not, so the symbol keeps its meaning.
+
+Each entry answers the same questions: what it is, what happens if you raise or
+lower it, what is recommended, what an extreme value does, and whether it costs
+time or memory. Fields that do not apply are simply absent rather than padded.
+
+This page is the prose version of `configs/parameter-registry.json`, which is
+the single definition of every parameter — the API serves it, the frontend
+renders forms from it, the worker validates against it and the ComfyUI mapping
+is generated from it.
 
 Each parameter is one of four kinds:
 

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, Skeleton } from "@/components/ui/feedback";
-import { SongCard } from "@/features/library/song-card";
+import { GenerationCard } from "@/components/library/generation-card";
 import { useProject } from "@/hooks/use-queries";
 import { formatDateTime } from "@/lib/format";
 
@@ -52,7 +52,7 @@ export default function ProjectPage() {
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-[var(--color-ink-faint)]">Lyrics</p>
-              <pre className="mt-1 max-h-60 overflow-auto whitespace-pre-wrap rounded-xl bg-[var(--color-canvas)] p-3 font-mono text-xs">
+              <pre className="mt-1 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-md)] bg-[var(--color-canvas)] p-3 font-mono text-xs">
                 {project.lyrics || "—"}
               </pre>
             </div>
@@ -68,7 +68,7 @@ export default function ProjectPage() {
 
         <div className="min-w-0 space-y-3">
           {generations.length > 0 ? (
-            generations.map((job) => <SongCard key={job.id} job={job} />)
+            generations.map((job) => <GenerationCard key={job.id} job={job} />)
           ) : (
             <EmptyState title="No generations in this project yet" />
           )}

@@ -46,6 +46,13 @@ def _gpus() -> tuple[list[dict], str | None, str | None]:
                 temperature = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
             except Exception:
                 temperature = None
+            try:
+                processes = [
+                    {"pid": int(p.pid), "used_bytes": int(p.usedGpuMemory or 0)}
+                    for p in pynvml.nvmlDeviceGetComputeRunningProcesses(handle)
+                ]
+            except Exception:
+                processes = []
             devices.append(
                 {
                     "index": index,
@@ -56,6 +63,7 @@ def _gpus() -> tuple[list[dict], str | None, str | None]:
                     "compute_capability": f"{capability[0]}.{capability[1]}",
                     "utilisation_percent": utilisation,
                     "temperature_c": temperature,
+                    "processes": processes,
                 }
             )
         return devices, driver, None
@@ -97,6 +105,83 @@ class SystemInfoService:
                 workers.append(payload)
         return {"workers": workers, "online": any(worker["online"] for worker in workers)}
 
+    def devices(self) -> dict:
+        """Selectable GPUs, merging what NVML sees with what the worker reports.
+
+        NVML in the API process sees every physical card. The worker may see a
+        subset, because CUDA_VISIBLE_DEVICES remaps indices. Where the worker
+        has reported its own view, that view is authoritative for selection —
+        an index the worker cannot address is not a real choice.
+        """
+        physical, driver, error = _gpus()
+        state = self.worker_state()
+        worker = next((entry for entry in state["workers"] if entry.get("online")), None)
+        reported = (worker or {}).get("gpu", {}).get("devices")
+        selected = self.store.device_index()
+        worker_pids = {entry.get("pid") for entry in state["workers"] if entry.get("pid")}
+
+        if reported:
+            # Worker indices equal NVML indices only when CUDA_VISIBLE_DEVICES
+            # is unset. When it is set the mapping is unknown, so live
+            # utilisation and process data are simply not merged rather than
+            # attributed to the wrong card — two identical A6000s are easy to
+            # confuse and a wrong attribution is worse than a missing one.
+            by_index = {device["index"]: device for device in physical}
+            mergeable = self.settings.cuda_visible_devices is None
+            devices = []
+            for entry in reported:
+                match = by_index.get(entry["index"]) if mergeable else None
+                merged = {
+                    "index": entry["index"],
+                    "name": entry.get("name"),
+                    "memory_total_bytes": entry.get("total_bytes"),
+                    "memory_free_bytes": entry.get("free_bytes"),
+                    "memory_used_bytes": (entry.get("total_bytes") or 0) - (entry.get("free_bytes") or 0),
+                    "compute_capability": entry.get("compute_capability"),
+                    "bf16_supported": entry.get("bf16_supported"),
+                    "utilisation_percent": (match or {}).get("utilisation_percent"),
+                    "temperature_c": (match or {}).get("temperature_c"),
+                    "processes": (match or {}).get("processes", []),
+                    "reported_by": "worker",
+                    "live_stats": match is not None,
+                }
+                merged["other_process_count"] = sum(
+                    1 for process in merged["processes"] if process["pid"] not in worker_pids
+                )
+                merged["other_process_bytes"] = sum(
+                    process["used_bytes"] for process in merged["processes"] if process["pid"] not in worker_pids
+                )
+                merged["selected"] = merged["index"] == selected
+                devices.append(merged)
+        else:
+            devices = []
+            for entry in physical:
+                device = dict(entry)
+                device["reported_by"] = "nvml"
+                device["bf16_supported"] = None
+                device["other_process_count"] = len(device.get("processes", []))
+                device["other_process_bytes"] = sum(p["used_bytes"] for p in device.get("processes", []))
+                device["selected"] = device["index"] == selected
+                devices.append(device)
+
+        active = (worker or {}).get("gpu", {}).get("active_index")
+        return {
+            "devices": devices,
+            "selected_index": selected,
+            "active_index": active,
+            "pending_restart": active is not None and active != selected,
+            "worker_online": state["online"],
+            "driver_version": driver,
+            "error": error,
+            "cuda_visible_devices": self.settings.cuda_visible_devices,
+            "note": (
+                "CUDA_VISIBLE_DEVICES is set, so the worker only sees a subset of the machine's GPUs "
+                "and its indices are renumbered. Unset it to choose freely."
+                if self.settings.cuda_visible_devices
+                else None
+            ),
+        }
+
     def info(self) -> dict:
         devices, driver, gpu_error = _gpus()
         usage = shutil.disk_usage(self.store.root)
@@ -132,6 +217,7 @@ class SystemInfoService:
                 "total_generations": len(jobs),
             },
             "worker": self.worker_state(),
+            "devices": self.devices(),
             "models": {
                 "model": self.settings.model_reference,
                 "vae": self.settings.vae_reference,

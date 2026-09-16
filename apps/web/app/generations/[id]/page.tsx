@@ -6,9 +6,11 @@ import {
   Download,
   FileMusic,
   Heart,
+  MoreHorizontal,
   Pause,
   Play,
   RefreshCw,
+  Trash2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -19,7 +21,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorNotice, Skeleton, WarningNotice } from "@/components/ui/feedback";
-import { ProgressPanel } from "@/features/generation/progress-panel";
+import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { DeleteGenerationDialog } from "@/components/library/delete-generation-dialog";
+import { GenerationStatus } from "@/components/generation/generation-status";
 import { TechnicalDetails } from "@/features/generation/technical-details";
 import { Waveform, usePeaks } from "@/features/player/waveform";
 import { useGeneration, useGenerationActions, useJobLog } from "@/hooks/use-queries";
@@ -36,7 +40,8 @@ export default function GenerationPage() {
   const { data, isLoading } = useGeneration(id);
   const { job: streamed, connected } = useGenerationStream(id);
   const { data: log } = useJobLog(id);
-  const { cancel, retry, duplicate, favorite } = useGenerationActions();
+  const { cancel, retry, duplicate, favorite, remove } = useGenerationActions();
+  const [deleting, setDeleting] = React.useState(false);
   const { play, track, playing, currentTime, duration, requestSeek } = usePlayer();
 
   const job = streamed ?? data?.generation;
@@ -57,6 +62,13 @@ export default function GenerationPage() {
 
   return (
     <div className="space-y-5">
+      <DeleteGenerationDialog
+        job={job}
+        open={deleting}
+        onOpenChange={setDeleting}
+        onDelete={(id) => remove.mutateAsync(id)}
+        onDeleted={() => router.push("/library")}
+      />
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4" />
@@ -68,11 +80,37 @@ export default function GenerationPage() {
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Favourite"
+          aria-label={job.favorite ? "Remove from favourites" : "Add to favourites"}
+          aria-pressed={job.favorite}
           onClick={() => favorite.mutate({ id: job.id, favorite: !job.favorite })}
         >
           <Heart className={cn("h-4 w-4", job.favorite && "fill-[var(--color-accent)] text-[var(--color-accent)]")} />
         </Button>
+        <Menu>
+          <MenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label="More actions">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </MenuTrigger>
+          <MenuContent align="end">
+            <MenuItem asChild>
+              <Link href={`/projects/${job.project_id}`}>Open project</Link>
+            </MenuItem>
+            <MenuItem onSelect={() => duplicate.mutate({ id: job.id })}>Duplicate settings</MenuItem>
+            <MenuSeparator />
+            <MenuItem
+              destructive
+              disabled={running}
+              onSelect={(event) => {
+                event.preventDefault();
+                setDeleting(true);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </MenuItem>
+          </MenuContent>
+        </Menu>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -198,9 +236,20 @@ export default function GenerationPage() {
 
               {job.error_message ? (
                 <ErrorNotice
-                  title={job.error_code ?? "Failed"}
+                  title={(job.error_code ?? "Failed").replace(/_/g, " ").toLowerCase()}
                   message={job.error_message}
                   guidance={job.error_guidance}
+                  actions={
+                    <>
+                      <Button variant="surface" size="sm" onClick={() => retry.mutate(job.id)}>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Retry
+                      </Button>
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link href="/create">Adjust settings</Link>
+                      </Button>
+                    </>
+                  }
                 />
               ) : null}
             </CardContent>
@@ -221,7 +270,7 @@ export default function GenerationPage() {
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
                   Lyrics
                 </p>
-                <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed">
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-md)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed">
                   {job.config.prompt.lyrics || "—"}
                 </pre>
               </div>
@@ -232,7 +281,7 @@ export default function GenerationPage() {
         </div>
 
         <aside className="min-w-0 space-y-5">
-          <ProgressPanel job={job} connected={connected} />
+          <GenerationStatus job={job} connected={connected} />
 
           <Card>
             <CardHeader className="pb-2">

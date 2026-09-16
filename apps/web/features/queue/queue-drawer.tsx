@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button";
 import { useGenerationActions, useQueue } from "@/hooks/use-queries";
 import { cn } from "@/lib/cn";
 import { formatCount, formatDuration } from "@/lib/format";
+import { usePlayer } from "@/store/player";
 
 /** Bottom-right drawer showing exactly what the worker and queue are doing. */
 export function QueueDrawer() {
   const { data } = useQueue();
   const { cancel } = useGenerationActions();
+  const hasTrack = usePlayer((state) => Boolean(state.track));
   const [open, setOpen] = React.useState(false);
 
   const active = data?.active ?? [];
@@ -23,8 +25,13 @@ export function QueueDrawer() {
   const current = active[0];
 
   return (
-    <div className="fixed bottom-24 right-4 z-30 w-[min(24rem,calc(100vw-2rem))] sm:right-6">
-      <div className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-line)] bg-[color-mix(in_oklch,var(--color-surface)_94%,transparent)] shadow-2xl backdrop-blur-xl">
+    <div
+      className="fixed right-3 z-20 w-[min(24rem,calc(100vw-1.5rem))] sm:right-6"
+      style={{
+        bottom: `calc(var(--mobile-nav-height) + ${hasTrack ? "var(--player-height)" : "0px"} + env(safe-area-inset-bottom) + 0.75rem)`,
+      }}
+    >
+      <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-line)] bg-[color-mix(in_oklch,var(--color-surface)_95%,transparent)] shadow-[var(--shadow-lg)] backdrop-blur-xl">
         <button
           onClick={() => setOpen((value) => !value)}
           className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--color-surface-2)]"
@@ -50,7 +57,7 @@ export function QueueDrawer() {
         {open ? (
           <div className="max-h-80 overflow-y-auto border-t border-[var(--color-line)] p-2">
             {active.map((job) => (
-              <div key={job.id} className="rounded-xl p-2 hover:bg-[var(--color-surface-2)]">
+              <div key={job.id} className="rounded-[var(--radius-sm)] p-2 hover:bg-[var(--color-surface-2)]">
                 <div className="flex items-center justify-between gap-2">
                   <Link href={`/generations/${job.id}`} className="truncate text-sm hover:text-[var(--color-accent)]">
                     {job.title || "Untitled"}
@@ -79,7 +86,7 @@ export function QueueDrawer() {
               </div>
             ))}
             {queued.map((job) => (
-              <div key={job.id} className="flex items-center justify-between gap-2 rounded-xl p-2 hover:bg-[var(--color-surface-2)]">
+              <div key={job.id} className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] p-2 hover:bg-[var(--color-surface-2)]">
                 <div className="min-w-0">
                   <Link href={`/generations/${job.id}`} className="block truncate text-sm hover:text-[var(--color-accent)]">
                     {job.title || "Untitled"}

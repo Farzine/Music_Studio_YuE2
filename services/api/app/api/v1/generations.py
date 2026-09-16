@@ -100,11 +100,17 @@ def patch_generation(
     return job.model_dump(mode="json")
 
 
-@router.delete("/generations/{generation_id}", status_code=204)
+@router.delete("/generations/{generation_id}")
 def delete_generation(
     generation_id: str, service: GenerationService = Depends(generation_service_provider)
-) -> None:
-    service.delete(generation_id)
+) -> dict:
+    """Delete a generation and its artifacts.
+
+    Returns what was actually removed. ``complete: false`` means some files
+    could not be deleted and are named in ``failures`` — the caller is told
+    rather than left with silent orphans.
+    """
+    return service.delete(generation_id)
 
 
 @router.post("/generations/{generation_id}/cancel")

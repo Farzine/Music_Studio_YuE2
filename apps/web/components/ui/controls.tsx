@@ -16,13 +16,14 @@ export const Slider = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SliderPrimitive.Root
     ref={ref}
-    className={cn("relative flex w-full touch-none select-none items-center py-2", className)}
+    className={cn("relative flex w-full touch-none select-none items-center py-2.5", className)}
     {...props}
   >
     <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-[var(--color-surface-2)]">
       <SliderPrimitive.Range className="absolute h-full bg-[var(--color-accent)]" />
     </SliderPrimitive.Track>
-    <SliderPrimitive.Thumb className="block h-4 w-4 rounded-full border-2 border-[var(--color-accent)] bg-[var(--color-canvas)] transition-transform hover:scale-110 focus-visible:outline-none" />
+    {/* 18px thumb with a larger invisible hit area: comfortable on touch. */}
+    <SliderPrimitive.Thumb className="block h-[18px] w-[18px] rounded-full border-2 border-[var(--color-accent)] bg-[var(--color-canvas)] shadow-[var(--shadow-sm)] transition-transform hover:scale-110 focus-visible:outline-none" />
   </SliderPrimitive.Root>
 ));
 Slider.displayName = "Slider";
@@ -66,7 +67,7 @@ export const AccordionTrigger = React.forwardRef<
     <AccordionPrimitive.Trigger
       ref={ref}
       className={cn(
-        "group flex flex-1 items-center justify-between gap-3 py-3.5 text-left text-sm font-medium transition-colors hover:text-[var(--color-accent)]",
+        "group flex min-h-12 flex-1 items-center justify-between gap-3 py-3.5 text-left text-sm font-medium transition-colors hover:text-[var(--color-accent)]",
         className,
       )}
       {...props}
@@ -84,7 +85,7 @@ export const AccordionContent = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <AccordionPrimitive.Content
     ref={ref}
-    className="overflow-hidden data-[state=closed]:animate-none"
+    className="accordion-content overflow-hidden"
     {...props}
   >
     <div className={cn("pb-5 pt-1", className)}>{children}</div>
@@ -101,7 +102,7 @@ export const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex items-center gap-1 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-1",
+      "inline-flex items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface)] p-1",
       className,
     )}
     {...props}
@@ -116,7 +117,7 @@ export const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "rounded-lg px-3 py-1.5 text-sm text-[var(--color-ink-muted)] transition-colors data-[state=active]:bg-[var(--color-surface-2)] data-[state=active]:text-[var(--color-ink)]",
+      "rounded-[var(--radius-sm)] px-3 py-2 text-sm text-[var(--color-ink-muted)] transition-colors data-[state=active]:bg-[var(--color-surface-3)] data-[state=active]:text-[var(--color-ink)]",
       className,
     )}
     {...props}
@@ -135,7 +136,7 @@ export function Tooltip({ label, children }: { label: React.ReactNode; children:
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
           sideOffset={6}
-          className="z-50 max-w-xs rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2 text-xs leading-relaxed text-[var(--color-ink-muted)] shadow-xl"
+          className="popover-content z-50 max-w-xs rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface-2)] px-3 py-2 text-xs leading-relaxed text-[var(--color-ink-muted)] shadow-[var(--shadow-lg)]"
         >
           {label}
         </TooltipPrimitive.Content>

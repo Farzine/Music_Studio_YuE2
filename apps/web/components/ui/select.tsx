@@ -16,7 +16,7 @@ export const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-10 w-full items-center justify-between rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] px-3 text-sm transition-colors focus:border-[var(--color-accent)] disabled:opacity-50 data-[placeholder]:text-[var(--color-ink-faint)]",
+      "flex h-10 w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-canvas)] px-3 text-left text-sm transition-colors hover:border-[var(--color-line-strong)] focus:border-[var(--color-accent)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-[var(--color-ink-faint)]",
       className,
     )}
     {...props}
@@ -38,34 +38,49 @@ export const SelectContent = React.forwardRef<
       ref={ref}
       position={position}
       className={cn(
-        "z-50 max-h-80 min-w-[10rem] overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-2xl",
+        "overlay-content z-50 max-h-[min(24rem,60dvh)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface-2)] shadow-[var(--shadow-lg)]",
         className,
       )}
       {...props}
     >
-      <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
+      <SelectPrimitive.Viewport className="max-h-[min(24rem,60dvh)] overflow-y-auto p-1">
+        {children}
+      </SelectPrimitive.Viewport>
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
 ));
 SelectContent.displayName = "SelectContent";
 
+/**
+ * A select option.
+ *
+ * Radix reserves the empty string for "no selection", and throws if an item
+ * uses it. Guarding here turns what was a blank-screen crash into a loud,
+ * findable development error.
+ */
 export const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & { help?: string }
->(({ className, children, help, ...props }, ref) => (
+>(({ className, children, help, value, ...props }, ref) => {
+  if (process.env.NODE_ENV !== "production" && value === "") {
+    throw new Error("SelectItem needs a non-empty value; use an explicit sentinel such as 'default'.");
+  }
+  return (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-pointer select-none flex-col gap-0.5 rounded-lg px-3 py-2 pr-8 text-sm outline-none data-[highlighted]:bg-[var(--color-surface-2)] data-[disabled]:cursor-not-allowed data-[disabled]:opacity-45",
+      "relative flex min-h-10 cursor-pointer select-none flex-col justify-center gap-0.5 rounded-[var(--radius-sm)] px-3 py-2 pr-8 text-sm outline-none data-[highlighted]:bg-[var(--color-surface-3)] data-[disabled]:cursor-not-allowed data-[disabled]:opacity-45",
       className,
     )}
-    {...props}
-  >
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-    {help ? <span className="text-xs text-[var(--color-ink-faint)]">{help}</span> : null}
-    <SelectPrimitive.ItemIndicator className="absolute right-2 top-2.5">
-      <Check className="h-4 w-4 text-[var(--color-accent)]" />
-    </SelectPrimitive.ItemIndicator>
-  </SelectPrimitive.Item>
-));
+      value={value}
+      {...props}
+    >
+      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {help ? <span className="text-xs leading-snug text-[var(--color-ink-faint)]">{help}</span> : null}
+      <SelectPrimitive.ItemIndicator className="absolute right-2 top-3">
+        <Check className="h-4 w-4 text-[var(--color-accent)]" />
+      </SelectPrimitive.ItemIndicator>
+    </SelectPrimitive.Item>
+  );
+});
 SelectItem.displayName = "SelectItem";

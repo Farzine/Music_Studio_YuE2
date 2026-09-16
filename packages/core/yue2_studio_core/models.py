@@ -50,13 +50,24 @@ class GenerationMode(str, Enum):
 
     @property
     def requires_abc(self) -> bool:
-        return self in {GenerationMode.COVER, GenerationMode.SCORE_EDIT}
+        """Modes that need a score supplied with the request.
+
+        Cover is excluded: its score is produced by transcribing the reference
+        audio during the run, so the request carries an upload instead.
+        """
+        return self in {GenerationMode.SCORE_EDIT}
+
+    @property
+    def requires_reference_audio(self) -> bool:
+        return self is GenerationMode.COVER
 
 
 class JobStatus(str, Enum):
     DRAFT = "DRAFT"
     QUEUED = "QUEUED"
     LOADING_MODEL = "LOADING_MODEL"
+    #: Cover only: the reference recording is being transcribed to a melody.
+    TRANSCRIBING = "TRANSCRIBING"
     PLANNING = "PLANNING"
     GENERATING = "GENERATING"
     DECODING = "DECODING"
@@ -74,6 +85,7 @@ class JobStatus(str, Enum):
     def is_active(self) -> bool:
         return self in {
             JobStatus.LOADING_MODEL,
+            JobStatus.TRANSCRIBING,
             JobStatus.PLANNING,
             JobStatus.GENERATING,
             JobStatus.DECODING,
@@ -87,7 +99,19 @@ class JobStatus(str, Enum):
 ALLOWED_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
     JobStatus.DRAFT: {JobStatus.QUEUED, JobStatus.CANCELLED},
     JobStatus.QUEUED: {JobStatus.LOADING_MODEL, JobStatus.CANCEL_REQUESTED, JobStatus.CANCELLED, JobStatus.FAILED},
-    JobStatus.LOADING_MODEL: {JobStatus.PLANNING, JobStatus.GENERATING, JobStatus.CANCEL_REQUESTED, JobStatus.FAILED},
+    JobStatus.LOADING_MODEL: {
+        JobStatus.TRANSCRIBING,
+        JobStatus.PLANNING,
+        JobStatus.GENERATING,
+        JobStatus.CANCEL_REQUESTED,
+        JobStatus.FAILED,
+    },
+    JobStatus.TRANSCRIBING: {
+        JobStatus.LOADING_MODEL,
+        JobStatus.PLANNING,
+        JobStatus.CANCEL_REQUESTED,
+        JobStatus.FAILED,
+    },
     JobStatus.PLANNING: {JobStatus.GENERATING, JobStatus.CANCEL_REQUESTED, JobStatus.FAILED},
     JobStatus.GENERATING: {JobStatus.DECODING, JobStatus.CANCEL_REQUESTED, JobStatus.FAILED},
     JobStatus.DECODING: {JobStatus.POST_PROCESSING, JobStatus.CANCEL_REQUESTED, JobStatus.FAILED},
@@ -125,10 +149,20 @@ class OutputFormat(str, Enum):
 # --------------------------------------------------------------------------- #
 
 
+#: Sentinel meaning "use the model configured in .env". It is a real string
+#: rather than "" because a select control cannot carry an empty option value,
+#: and because an explicit sentinel is clearer in a stored configuration than a
+#: blank field.
+DEFAULT_MODEL = "default"
+
+
 class ModelConfig(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
-    checkpoint: str = Field(default="", description="Local directory or HF repo id; empty means the configured default")
+    checkpoint: str = Field(
+        default=DEFAULT_MODEL,
+        description="Local directory, HF repo id, or 'default' to use the configured model",
+    )
     revision: str | None = None
     vae: str = Field(default="standard", description="standard | legacy | path | repo id")
     vae_revision: str | None = None
@@ -138,19 +172,40 @@ class ModelConfig(BaseModel):
     memory_budget_gib: float = Field(default=40.0, ge=8.0, le=512.0)
     local_files_only: bool = True
 
+    @field_validator("checkpoint", mode="before")
+    @classmethod
+    def _normalise_checkpoint(cls, value):
+        """Accept the historical empty string as the default sentinel."""
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return DEFAULT_MODEL
+        return value
+
+    @property
+    def uses_default_checkpoint(self) -> bool:
+        return self.checkpoint == DEFAULT_MODEL
+
 
 class PromptConfig(BaseModel):
     style: str = Field(default="", max_length=4000)
     lyrics: str = Field(default="", max_length=20000)
     abc: str = Field(default="", max_length=200000)
     mode: GenerationMode = GenerationMode.FULL
+    #: Cover mode only: the upload whose melody conditions the generation.
+    reference_upload_id: str | None = None
 
     @model_validator(mode="after")
     def _check(self) -> "PromptConfig":
-        if self.mode.requires_abc and not self.abc.strip():
+        if self.mode is GenerationMode.COVER:
+            # A cover's score comes from transcribing the reference, so the
+            # upload is the requirement rather than a pre-existing score.
+            if not self.reference_upload_id:
+                raise ValueError("Cover mode requires a reference audio upload")
+        elif self.mode.requires_abc and not self.abc.strip():
             raise ValueError(f"mode '{self.mode.value}' requires a non-empty ABC score")
         if self.abc.strip() and self.mode == GenerationMode.OFF:
             raise ValueError("an ABC score cannot be used with Direct Audio (cot=off)")
+        if self.reference_upload_id and self.mode is not GenerationMode.COVER:
+            raise ValueError("reference audio is only used by Cover mode")
         return self
 
 

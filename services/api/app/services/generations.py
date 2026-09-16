@@ -5,11 +5,19 @@ loads a model and never runs inference; that belongs to the worker process.
 """
 from __future__ import annotations
 
+import logging
 import secrets
 from typing import Any
 
 from yue2_studio_core.abc import validate as validate_abc
-from yue2_studio_core.errors import ConflictError, NotFoundError, UnsupportedCapabilityError, ValidationError
+from yue2_studio_core.errors import (
+    ConflictError,
+    ErrorCode,
+    NotFoundError,
+    StudioError,
+    UnsupportedCapabilityError,
+    ValidationError,
+)
 from yue2_studio_core.ids import new_id
 from yue2_studio_core.models import (
     GenerationConfig,
@@ -27,6 +35,8 @@ from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store
 
 from app.services.capabilities import CapabilityService
+
+logger = logging.getLogger(__name__)
 
 MAX_SEED = 2**63 - 1
 
@@ -68,6 +78,9 @@ class GenerationService:
 
         if config.prompt.abc.strip():
             validate_abc(config.prompt.abc)  # raises AbcValidationError with the reason
+
+        self._validate_model(config)
+        self._validate_reference_audio(config)
 
         violations = unsupported_parameters_in_use(config, backend)
         if violations:
@@ -115,6 +128,56 @@ class GenerationService:
         if config.prompt.lyrics and len(config.prompt.lyrics) > 8000:
             warnings.append("Very long lyrics can crowd the context window and lead to a truncated plan.")
         return warnings
+
+    def _validate_model(self, config: GenerationConfig) -> None:
+        """Refuse an unknown or incomplete model, naming the actual problem."""
+        entry = self.capabilities.resolve_model_choice(config.model.checkpoint)
+        if entry is None:
+            available = [
+                item["id"] for item in self.capabilities.local_models() if item["role"] == "model"
+            ]
+            raise ValidationError(
+                f"The selected model '{config.model.checkpoint}' is not one this installation knows about.",
+                details={"parameter": "model.checkpoint", "available": available},
+            )
+        if not entry["present"]:
+            raise StudioError(
+                ErrorCode.MODEL_NOT_FOUND,
+                f"The selected model '{entry['label']}' cannot be loaded: {entry['problem']}",
+                details={
+                    "parameter": "model.checkpoint",
+                    "model": entry["id"],
+                    "path": entry["path"],
+                    "problem": entry["problem"],
+                },
+            )
+
+    def _validate_reference_audio(self, config: GenerationConfig) -> None:
+        """Cover mode: the upload has to exist and be readable, now, not later."""
+        upload_id = config.prompt.reference_upload_id
+        if not upload_id:
+            return
+        try:
+            upload = self.store.get_upload(upload_id)
+        except NotFoundError as exc:
+            raise StudioError(
+                ErrorCode.AUDIO_INPUT_ERROR,
+                "The reference audio upload no longer exists. Upload the file again.",
+                details={"parameter": "prompt.reference_upload_id", "upload_id": upload_id},
+            ) from exc
+        path = self.store.absolute(upload.path)
+        if not path.is_file():
+            raise StudioError(
+                ErrorCode.AUDIO_INPUT_ERROR,
+                "The reference audio file is missing from disk. Upload it again.",
+                details={"parameter": "prompt.reference_upload_id", "upload_id": upload_id},
+            )
+        if upload.duration_seconds is not None and upload.duration_seconds < 5:
+            raise StudioError(
+                ErrorCode.AUDIO_INPUT_ERROR,
+                "The reference audio is shorter than five seconds, which is too little to transcribe.",
+                details={"parameter": "prompt.reference_upload_id", "duration": upload.duration_seconds},
+            )
 
     # -- seed ------------------------------------------------------------- #
 
@@ -301,17 +364,41 @@ class GenerationService:
         job.title = title
         return self.store.save_job(job)
 
-    def delete(self, generation_id: str) -> None:
+    def delete(self, generation_id: str) -> dict:
+        """Delete a generation and everything belonging to it.
+
+        Only this generation's own directory is touched: model files, shared
+        caches, other projects and other generations are never involved.
+        """
         job = self.store.get_job(generation_id)
         if job.status.is_active or job.status is JobStatus.QUEUED:
-            raise ConflictError("Cancel the generation before deleting it.")
-        directory = self.store.generation_dir(job.project_id, job.id)
-        if directory.is_dir():
-            import shutil
+            raise ConflictError(
+                "This generation is still running. Cancel it first, then delete it."
+            )
+        report = self.store.delete_generation_artifacts(job.project_id, job.id)
 
-            shutil.rmtree(directory)
-        self.store.job_path(job.id).unlink(missing_ok=True)
-        self.store.cancel_marker_path(job.id).unlink(missing_ok=True)
+        project = self.store.get_project(job.project_id)
+        if project.current_generation_id == job.id:
+            remaining = [
+                other
+                for other in self.store.iter_jobs()
+                if other.project_id == project.id and other.id != job.id
+            ]
+            remaining.sort(key=lambda other: other.requested_at, reverse=True)
+            project.current_generation_id = remaining[0].id if remaining else None
+            self.store.save_project(project)
+
+        if not report["complete"]:
+            logger.error(
+                "generation %s was deleted with leftovers: %s", generation_id, report["failed"]
+            )
+        return {
+            "deleted": True,
+            "generation_id": generation_id,
+            "artifacts_removed": len(report["removed"]),
+            "complete": report["complete"],
+            "failures": report["failed"],
+        }
 
     def manifest(self, generation_id: str) -> dict:
         job = self.store.get_job(generation_id)

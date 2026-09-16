@@ -4,7 +4,7 @@ import {
   CircleAlert,
   Cpu,
   Disc3,
-  Folder,
+  FolderOpen,
   Info,
   Library,
   Settings,
@@ -15,109 +15,176 @@ import { usePathname } from "next/navigation";
 import * as React from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { PlayerBar } from "@/features/player/player-bar";
 import { QueueDrawer } from "@/features/queue/queue-drawer";
-import { useHealth } from "@/hooks/use-queries";
+import { useHealth, useQueue } from "@/hooks/use-queries";
 import { cn } from "@/lib/cn";
+import { usePlayer } from "@/store/player";
 
 const NAV = [
   { href: "/create", label: "Create", icon: Sparkles },
   { href: "/library", label: "Library", icon: Library },
-  { href: "/", label: "Projects", icon: Folder },
+  { href: "/", label: "Projects", icon: FolderOpen },
   { href: "/system", label: "System", icon: Cpu },
   { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/about", label: "About", icon: Info },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const { data: health } = useHealth();
+const SECONDARY = [{ href: "/about", label: "About", icon: Info }];
 
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+function useIsActive() {
+  const pathname = usePathname();
+  return React.useCallback(
+    (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href)),
+    [pathname],
+  );
+}
+
+function HealthBadge() {
+  const { data } = useHealth();
+  if (!data) return null;
+  if (data.ready) {
+    return (
+      <Badge tone="accent" title={`Backend: ${data.backend}`}>
+        <span className="h-1.5 w-1.5 rounded-full bg-current" />
+        {data.backend}
+      </Badge>
+    );
+  }
+  return (
+    <Link href="/system">
+      <Badge tone="warn">
+        <CircleAlert className="h-3 w-3" />
+        {data.worker_online ? "model missing" : "worker offline"}
+      </Badge>
+    </Link>
+  );
+}
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const isActive = useIsActive();
+  const { data: queue } = useQueue();
+  const track = usePlayer((state) => state.track);
+  const busy = (queue?.active.length ?? 0) + (queue?.depth ?? 0);
 
   return (
-    <div className="min-h-dvh pb-40 lg:pb-28">
+    <div className="min-h-dvh">
+      {/* Header: one row on every size. */}
       <header className="sticky top-0 z-30 border-b border-[var(--color-line)] bg-[color-mix(in_oklch,var(--color-canvas)_88%,transparent)] backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-2 px-4 sm:px-6">
-          <Link href="/" className="mr-2 flex items-center gap-2.5">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-accent)] text-[var(--color-accent-ink)]">
+        <div className="mx-auto flex h-16 max-w-[1800px] items-center gap-3 px-4 sm:px-6">
+          <Link href="/" className="flex items-center gap-2.5" aria-label="YuE2 Music Studio home">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius-md)] bg-[var(--color-accent)] text-[var(--color-accent-ink)]">
               <Disc3 className="h-5 w-5" />
             </span>
             <span className="hidden text-sm font-semibold tracking-tight sm:block">YuE2 Music Studio</span>
           </Link>
 
-          <nav className="hidden items-center gap-1 lg:flex" aria-label="Main">
-            {NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "rounded-xl px-3 py-2 text-sm transition-colors",
-                  isActive(item.href)
-                    ? "bg-[var(--color-surface-2)] text-[var(--color-ink)]"
-                    : "text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)]",
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-
           <div className="ml-auto flex items-center gap-2">
-            {health ? (
-              health.ready ? (
-                <Badge tone="accent">
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                  {health.backend}
-                </Badge>
-              ) : (
-                <Link href="/system">
-                  <Badge tone="warn">
-                    <CircleAlert className="h-3 w-3" />
-                    {health.worker_online ? "model missing" : "worker offline"}
-                  </Badge>
-                </Link>
-              )
-            ) : null}
-            <Link
-              href="/create"
-              className="rounded-xl bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-ink)] transition-[filter] hover:brightness-110"
-            >
-              Create
-            </Link>
+            <HealthBadge />
+            <Button variant="primary" size="sm" asChild className="lg:hidden">
+              <Link href="/create">
+                <Sparkles className="h-4 w-4" />
+                <span className="sr-only sm:not-sr-only">Create</span>
+              </Link>
+            </Button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6">{children}</main>
+      <div className="mx-auto flex max-w-[1800px]">
+        {/* Desktop sidebar. */}
+        <aside className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-[var(--sidebar-width)] shrink-0 border-r border-[var(--color-line)] px-3 py-5 lg:block">
+          <Button variant="primary" className="mb-4 w-full" asChild>
+            <Link href="/create">
+              <Sparkles className="h-4 w-4" />
+              Create
+            </Link>
+          </Button>
+          <nav aria-label="Main" className="space-y-1">
+            {NAV.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "flex h-10 items-center gap-3 rounded-[var(--radius-md)] px-3 text-sm transition-colors",
+                    active
+                      ? "bg-[var(--color-surface-2)] font-medium text-[var(--color-ink)]"
+                      : "text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)]",
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                  {item.href === "/library" && busy > 0 ? (
+                    <Badge tone="accent" className="ml-auto">
+                      {busy}
+                    </Badge>
+                  ) : null}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="mt-6 border-t border-[var(--color-line)] pt-4">
+            {SECONDARY.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="flex h-9 items-center gap-3 rounded-[var(--radius-md)] px-3 text-sm text-[var(--color-ink-faint)] transition-colors hover:text-[var(--color-ink)]"
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </aside>
 
-      {/* Mobile navigation sits above the player. */}
+        <main
+          className="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6"
+          style={{
+            // Room for the mobile nav and the player, whichever are showing.
+            paddingBottom: `calc(1.5rem + var(--mobile-nav-height) + ${track ? "var(--player-height)" : "0px"} + env(safe-area-inset-bottom))`,
+          }}
+        >
+          {children}
+        </main>
+      </div>
+
+      <QueueDrawer />
+      <PlayerBar />
+
+      {/* Mobile navigation, above the player. */}
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-[4.5rem] z-30 border-t border-[var(--color-line)] bg-[color-mix(in_oklch,var(--color-canvas)_94%,transparent)] backdrop-blur-xl lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-line)] bg-[color-mix(in_oklch,var(--color-canvas)_95%,transparent)] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden"
+        style={{ marginBottom: track ? "var(--player-height)" : undefined }}
       >
         <div className="flex items-stretch justify-around">
-          {NAV.slice(0, 5).map((item) => {
+          {NAV.map((item) => {
             const Icon = item.icon;
+            const active = isActive(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px]",
-                  isActive(item.href) ? "text-[var(--color-accent)]" : "text-[var(--color-ink-faint)]",
+                  "flex min-h-[var(--mobile-nav-height)] flex-1 flex-col items-center justify-center gap-1 text-[11px] transition-colors",
+                  active ? "text-[var(--color-accent)]" : "text-[var(--color-ink-faint)]",
                 )}
               >
-                <Icon className="h-4.5 w-4.5" />
+                <Icon className="h-5 w-5" />
                 {item.label}
               </Link>
             );
           })}
         </div>
       </nav>
-
-      <QueueDrawer />
-      <PlayerBar />
     </div>
   );
 }

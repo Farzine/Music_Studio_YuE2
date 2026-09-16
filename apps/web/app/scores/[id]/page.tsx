@@ -114,7 +114,7 @@ export default function ScorePage() {
               </TabsList>
               <TabsContent value="edit" className="mt-3">
                 <Textarea
-                  rows={26}
+                  rows={18}
                   value={value}
                   onChange={(event) => {
                     setDraft(event.target.value);
@@ -126,7 +126,7 @@ export default function ScorePage() {
                 />
               </TabsContent>
               <TabsContent value="source" className="mt-3">
-                <pre className="max-h-[32rem] overflow-auto rounded-xl bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed">
+                <pre className="max-h-[60dvh] overflow-auto rounded-[var(--radius-md)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed">
                   {data.score.source_abc}
                 </pre>
               </TabsContent>
@@ -194,7 +194,7 @@ export default function ScorePage() {
                   <Badge tone={comparison.match ? "accent" : "warn"}>
                     {comparison.match ? "melody, timing and tempo unchanged" : "musical content changed"}
                   </Badge>
-                  <pre className="max-h-64 overflow-auto rounded-xl bg-[var(--color-canvas)] p-3 font-mono text-[11px] leading-relaxed">
+                  <pre className="max-h-64 overflow-auto rounded-[var(--radius-md)] bg-[var(--color-canvas)] p-3 font-mono text-[11px] leading-relaxed">
                     {JSON.stringify(comparison, null, 2)}
                   </pre>
                   <p className="text-xs text-[var(--color-ink-faint)]">

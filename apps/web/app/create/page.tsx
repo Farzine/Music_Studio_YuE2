@@ -7,7 +7,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { EmptyState, Skeleton } from "@/components/ui/feedback";
 import { CreateForm } from "@/features/create/create-form";
-import { SongCard } from "@/features/library/song-card";
+import { GenerationCard } from "@/components/library/generation-card";
 import { useGenerations } from "@/hooks/use-queries";
 
 export default function CreatePage() {
@@ -39,7 +39,7 @@ export default function CreatePage() {
         ) : data && data.items.length > 0 ? (
           <div className="space-y-3">
             {data.items.map((job) => (
-              <SongCard key={job.id} job={job} />
+              <GenerationCard key={job.id} job={job} />
             ))}
           </div>
         ) : (

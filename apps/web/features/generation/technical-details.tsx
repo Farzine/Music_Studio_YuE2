@@ -12,8 +12,8 @@ import type { GenerationJob } from "@/types/api";
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-[var(--color-line)] py-1.5 last:border-b-0">
-      <span className="text-xs text-[var(--color-ink-faint)]">{label}</span>
-      <span className="truncate text-right font-mono text-xs text-[var(--color-ink)]">{value}</span>
+      <span className="shrink-0 text-xs text-[var(--color-ink-faint)]">{label}</span>
+      <span className="min-w-0 truncate text-right font-mono text-xs text-[var(--color-ink)]">{value}</span>
     </div>
   );
 }
@@ -32,17 +32,17 @@ export function TechnicalDetails({ job }: { job: GenerationJob }) {
   const timing = job.timing;
 
   return (
-    <div className="rounded-[var(--radius-card)] border border-[var(--color-line)] bg-[var(--color-surface)]">
+    <div className="rounded-[var(--radius-lg)] border border-[var(--color-line)] bg-[var(--color-surface)]">
       <button
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 px-5 py-3.5 text-sm font-medium"
+        className="flex min-h-12 w-full items-center justify-between gap-2 px-5 py-3.5 text-sm font-medium"
       >
         Technical details
         <ChevronDown className={open ? "h-4 w-4 rotate-180 transition-transform" : "h-4 w-4 transition-transform"} />
       </button>
       {open ? (
-        <div className="grid gap-6 border-t border-[var(--color-line)] p-5 lg:grid-cols-2">
+        <div className="grid gap-6 border-t border-[var(--color-line)] p-5 xl:grid-cols-2">
           <section>
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
               Identity
@@ -120,7 +120,7 @@ export function TechnicalDetails({ job }: { job: GenerationJob }) {
             ))}
           </section>
 
-          <section className="lg:col-span-2">
+          <section className="xl:col-span-2">
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
               Effective configuration
             </h4>

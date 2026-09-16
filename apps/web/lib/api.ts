@@ -1,6 +1,8 @@
 import type {
   Capabilities,
+  DeleteReport,
   GenerationJob,
+  GpuInventory,
   GenerationSchema,
   Preset,
   QueueView,
@@ -59,6 +61,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<{ status: string; ready: boolean; worker_online: boolean; backend: string }>("/api/v1/health"),
   systemInfo: () => request<SystemInfo>("/api/v1/system/info"),
+  gpus: () => request<GpuInventory>("/api/v1/system/gpus"),
+  selectDevice: (deviceIndex: number) =>
+    request<GpuInventory>("/api/v1/system/device", {
+      method: "PUT",
+      body: JSON.stringify({ device_index: deviceIndex }),
+    }),
   vramEstimate: (seconds: number, decoderMode: string, budget: number) =>
     request<{ warning: { message: string; estimate_gib: number; available_gib: number } | null }>(
       `/api/v1/system/vram-estimate?seconds=${seconds}&decoder_mode=${decoderMode}&budget_gib=${budget}`,
@@ -104,7 +112,8 @@ export const api = {
     request<{ generation: GenerationJob; project: SongProject }>(`/api/v1/generations/${id}`),
   patchGeneration: (id: string, body: { title?: string; favorite?: boolean }) =>
     request<GenerationJob>(`/api/v1/generations/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  deleteGeneration: (id: string) => request<void>(`/api/v1/generations/${id}`, { method: "DELETE" }),
+  deleteGeneration: (id: string) =>
+    request<DeleteReport>(`/api/v1/generations/${id}`, { method: "DELETE" }),
   cancelGeneration: (id: string) => request<GenerationJob>(`/api/v1/generations/${id}/cancel`, { method: "POST" }),
   retryGeneration: (id: string) => request<GenerationJob>(`/api/v1/generations/${id}/retry`, { method: "POST" }),
   duplicateGeneration: (id: string, overrides: Record<string, unknown> = {}) =>
