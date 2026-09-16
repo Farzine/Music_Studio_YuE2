@@ -1,29 +1,43 @@
 "use client";
 
-import { Dice5, Sliders, Sparkles, Wand2 } from "lucide-react";
+import { GitBranch, Sliders, Sparkles, Wand2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { AudioUploader, type UploadedAudio } from "@/components/audio/audio-uploader";
+import { type UploadedAudio } from "@/components/audio/audio-uploader";
 import { BudgetPanel } from "@/components/generation/budget-panel";
-import { ModeSelector } from "@/components/generation/mode-selector";
+import { PromptFields } from "@/components/generation/prompt-fields";
 import { AdvancedSettings } from "@/components/settings/advanced-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, SectionHeading } from "@/components/ui/card";
 import { ErrorNotice, Skeleton, WarningNotice } from "@/components/ui/feedback";
-import { Field, Input, Textarea } from "@/components/ui/field";
-import { Slider } from "@/components/ui/controls";
+import { Field, Input } from "@/components/ui/field";
 import { PresetPicker } from "@/features/create/preset-picker";
 import { useBudgetEstimate } from "@/hooks/use-budget";
 import { useCapabilities, useGenerationActions, usePresets, useSchema } from "@/hooks/use-queries";
 import { ApiRequestError, api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { SECTION_TAGS, STYLE_EXAMPLES, deepMerge, getPath, setPath, type ConfigObject } from "@/lib/config";
-import { formatDuration } from "@/lib/format";
+import { deepMerge, getPath, setPath, type ConfigObject } from "@/lib/config";
 import type { Preset } from "@/types/api";
 
-export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) {
+export function CreateForm({
+  initialConfig,
+  projectId,
+  parentGenerationId,
+  initialTitle = "",
+  origin,
+}: {
+  initialConfig?: ConfigObject;
+  /** Attach the new take to this project instead of creating a new one. */
+  projectId?: string;
+  /** The take this one was started from, recorded as lineage only. */
+  parentGenerationId?: string;
+  initialTitle?: string;
+  /** Shown at the top so it is obvious where the loaded settings came from. */
+  origin?: { title: string; description: string; href?: string; linkLabel?: string };
+}) {
   const router = useRouter();
   const { data: schema, isLoading: schemaLoading } = useSchema();
   const { data: capabilities } = useCapabilities();
@@ -31,8 +45,12 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
   const { create } = useGenerationActions();
 
   const [config, setConfig] = React.useState<ConfigObject>(initialConfig ?? {});
-  const [title, setTitle] = React.useState("");
-  const [activePreset, setActivePreset] = React.useState<string | null>("preset_balanced");
+  const [title, setTitle] = React.useState(initialTitle);
+  // A loaded configuration is not a preset; showing one selected would claim
+  // the settings came from somewhere they did not.
+  const [activePreset, setActivePreset] = React.useState<string | null>(
+    initialConfig ? null : "preset_balanced",
+  );
   const [reference, setReference] = React.useState<UploadedAudio | null>(null);
   const [error, setError] = React.useState<ApiRequestError | null>(null);
   const [vramWarning, setVramWarning] = React.useState<string | null>(null);
@@ -43,16 +61,12 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
     [defaults, config],
   );
 
-  const parameter = (key: string) => schema?.parameters.find((item) => item.key === key);
   const mode = (getPath(effective, "prompt.mode") as string) ?? "full";
   const style = (getPath(effective, "prompt.style") as string) ?? "";
   const lyrics = (getPath(effective, "prompt.lyrics") as string) ?? "";
   const duration = (getPath(effective, "sampling.max_duration_seconds") as number) ?? 360;
-  const seed = getPath(effective, "sampling.seed") as number | undefined;
-  const seedBehaviour = getPath(effective, "sampling.control_after_generate") as string;
   const decoderMode = (getPath(effective, "decoder.mode") as string) ?? "tiled";
   const budget = (getPath(effective, "model.memory_budget_gib") as number) ?? 40;
-  const cover = capabilities?.capabilities?.cover;
 
   // Live token budget for exactly what would be submitted. The backend counts
   // with the checkpoint's own tokenizer, so the figures are the model's, not a
@@ -91,10 +105,6 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
     };
   }, [duration, decoderMode, budget]);
 
-  const insertTag = (tag: string) => {
-    update("prompt.lyrics", lyrics ? `${lyrics.replace(/\s*$/, "")}\n\n${tag}\n` : `${tag}\n`);
-  };
-
   const needsLyrics = mode !== "off";
   const needsReference = mode === "cover";
   const canSubmit =
@@ -118,7 +128,11 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
     try {
       const result = await create.mutateAsync({
         title: title.trim() || undefined,
-        config: config as Record<string, unknown>,
+        project_id: projectId ?? null,
+        parent_generation_id: parentGenerationId ?? null,
+        // The whole configuration is sent, not a diff: the take that comes out
+        // has to record exactly what it ran with.
+        config: effective as Record<string, unknown>,
       });
       router.push(`/generations/${result.generation.id}`);
     } catch (submitError) {
@@ -143,15 +157,40 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
 
   return (
     <div className="space-y-4 pb-24 lg:pb-0">
+      {origin ? (
+        <div className="flex flex-wrap items-start gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface-2)] px-4 py-3">
+          <GitBranch className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">{origin.title}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-[var(--color-ink-muted)]">
+              {origin.description}
+            </p>
+          </div>
+          {origin.href ? (
+            <Button variant="ghost" size="xs" asChild>
+              <Link href={origin.href}>{origin.linkLabel ?? "Open"}</Link>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-[var(--color-accent)]" />
-            Create music
+            {projectId ? "New version" : "Create music"}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <Field label="Title" description="Optional. Names the project and your downloads." htmlFor="title">
+          <Field
+            label="Title"
+            htmlFor="title"
+            description={
+              projectId
+                ? "Names this version and its downloads. The project keeps its own name."
+                : "Optional. Names the project and your downloads."
+            }
+          >
             <Input
               id="title"
               placeholder="Untitled"
@@ -160,150 +199,14 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
             />
           </Field>
 
-          <Field
-            label="Style"
-            htmlFor="style"
-            required
-            guidance={parameter("prompt.style")?.guidance}
-            description="Genre, instruments, vocal character, language and tempo."
-            value={`${style.length}/4000`}
-          >
-            <Textarea
-              id="style"
-              rows={3}
-              placeholder={STYLE_EXAMPLES[0]}
-              value={style}
-              onChange={(event) => update("prompt.style", event.target.value)}
-            />
-            <div className="flex flex-wrap gap-1.5">
-              {STYLE_EXAMPLES.map((example) => (
-                <button
-                  key={example}
-                  type="button"
-                  onClick={() => update("prompt.style", example)}
-                  className="rounded-[var(--radius-sm)] border border-[var(--color-line)] px-2 py-1 text-[11px] text-[var(--color-ink-faint)] transition-colors hover:border-[var(--color-line-strong)] hover:text-[var(--color-ink)]"
-                >
-                  {example.split(",")[0]}
-                </button>
-              ))}
-            </div>
-          </Field>
-
-          <Field
-            label="Lyrics"
-            htmlFor="lyrics"
-            required={needsLyrics}
-            guidance={parameter("prompt.lyrics")?.guidance}
-            description={
-              needsLyrics
-                ? "Use section tags on their own line."
-                : "Direct Audio ignores lyrics — leave this empty for an instrumental."
-            }
-            value={`${lyrics.length}/20000`}
-          >
-            <div className="flex flex-wrap gap-1.5">
-              {SECTION_TAGS.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => insertTag(tag)}
-                  className="rounded-[var(--radius-sm)] border border-[var(--color-line)] px-2 py-1 font-mono text-[11px] text-[var(--color-ink-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
-            <Textarea
-              id="lyrics"
-              rows={11}
-              placeholder={"[Verse]\nNeon fades along the lane\n\n[Chorus]\nLet the day come into view"}
-              value={lyrics}
-              onChange={(event) => update("prompt.lyrics", event.target.value)}
-              className="font-mono text-[13px]"
-            />
-          </Field>
-
-          <ModeSelector
-            parameter={parameter("prompt.mode")}
-            value={mode}
-            onChange={(next) => update("prompt.mode", next)}
+          <PromptFields
+            schema={schema}
+            config={effective}
+            capabilities={capabilities}
+            reference={reference}
+            onReferenceChange={setReference}
+            onChange={update}
           />
-
-          {mode === "cover" ? (
-            <Field
-              label="Reference audio"
-              required
-              guidance={parameter("prompt.reference_upload_id")?.guidance}
-            >
-              <AudioUploader
-                value={reference}
-                disabled={!cover?.supported}
-                disabledReason={cover?.reason}
-                onChange={(next) => {
-                  setReference(next);
-                  update("prompt.reference_upload_id", next?.id ?? null);
-                }}
-              />
-            </Field>
-          ) : null}
-
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field
-              label="Maximum duration"
-              guidance={parameter("sampling.max_duration_seconds")?.guidance}
-              value={formatDuration(duration)}
-              description={
-                `${Math.round(duration * 25).toLocaleString()} acoustic tokens at 25 per second. ` +
-                "The model decides how long the song is, so this is a hard stop rather than a target — " +
-                "with “Let the song finish” on, it is raised if the planned song needs more."
-              }
-            >
-              <Slider
-                value={[duration]}
-                min={8}
-                max={960}
-                step={1}
-                aria-label="Maximum duration"
-                onValueChange={([next]) => update("sampling.max_duration_seconds", next)}
-              />
-            </Field>
-
-            <Field
-              label="Seed"
-              htmlFor="seed"
-              guidance={parameter("sampling.seed")?.guidance}
-              description={
-                seedBehaviour === "randomize"
-                  ? "A new seed is drawn on the server for each run and saved to the manifest."
-                  : "The same seed, settings and weights reproduce this exact song."
-              }
-            >
-              <div className="flex gap-2">
-                <Input
-                  id="seed"
-                  type="number"
-                  inputMode="numeric"
-                  className="tabular-nums"
-                  value={seed ?? ""}
-                  onChange={(event) => update("sampling.seed", Number(event.target.value))}
-                />
-                <Button
-                  variant={seedBehaviour === "randomize" ? "primary" : "surface"}
-                  size="icon"
-                  aria-label="Randomise the seed for each run"
-                  aria-pressed={seedBehaviour === "randomize"}
-                  onClick={() =>
-                    update(
-                      "sampling.control_after_generate",
-                      seedBehaviour === "randomize" ? "fixed" : "randomize",
-                    )
-                  }
-                >
-                  <Dice5 className="h-4 w-4" />
-                </Button>
-              </div>
-            </Field>
-          </div>
 
           {estimate ? (
             <BudgetPanel
@@ -333,7 +236,7 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
               onClick={submit}
             >
               {create.isPending ? null : <Wand2 className="h-4 w-4" />}
-              {create.isPending ? "Queueing…" : "Create"}
+              {create.isPending ? "Queueing…" : projectId ? "Generate new version" : "Create"}
             </Button>
             {blocker ? (
               <p className="mt-2 text-center text-xs text-[var(--color-ink-faint)]">{blocker}</p>
@@ -397,7 +300,7 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
           onClick={submit}
         >
           {create.isPending ? null : <Wand2 className="h-4 w-4" />}
-          {create.isPending ? "Queueing…" : "Create"}
+          {create.isPending ? "Queueing…" : projectId ? "Generate new version" : "Create"}
         </Button>
         {blocker ? (
           <p className={cn("mt-1.5 text-center text-xs text-[var(--color-ink-faint)]")}>{blocker}</p>

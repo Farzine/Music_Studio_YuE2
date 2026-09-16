@@ -87,6 +87,64 @@ the previous version intact, never a truncated one.
 Large binaries never enter a JSON document. The job records paths, sizes and
 SHA-256 hashes; the bytes stay on the filesystem.
 
+`data/tmp/downloads/` holds converted download copies while they are being
+served. Each is deleted when its response finishes, and anything left by an
+abandoned download is swept on the next request.
+
+## Projects and versions
+
+A **project** is mutable: it can be renamed, its settings can be edited, it can
+be deleted. A **generation** is not: its configuration snapshot is written when
+the job is queued and never rewritten.
+
+That separation is what makes the history trustworthy, and it is enforced in
+three places rather than by convention:
+
+- `SongProject.default_config` holds the settings the *next* version starts
+  from. `ProjectService.update_settings` writes only that field and the
+  project's own descriptive fields. Nothing under
+  `projects/<id>/generations/` is opened.
+- `GenerationJob.config` is set once in `GenerationService.create_generation`
+  and written to `request.json` at the same moment. Regeneration is an ordinary
+  create carrying a copy of an earlier snapshot, so the earlier job document is
+  only ever read.
+- `GenerationJob.version` comes from `Store.reserve_generation_version`, which
+  advances a counter stored on the project. Counting the surviving takes instead
+  would hand version 2 out again after version 2 was deleted, putting two
+  different takes at the same point in the history.
+
+`parent_generation_id` records where a version came from. It is validated
+against the project at creation, so the history cannot contain a link to a take
+in another project or to one that does not exist.
+
+Deleting a generation removes only its own directory and its own job record;
+deleting a project removes its directory and the job records of the versions
+inside it. Both report exactly what went, and both refuse while something in
+scope is still running.
+
+## Download delivery
+
+`packages/core/yue2_studio_core/delivery.py` owns everything about handing audio
+over: the format catalogue, filename sanitisation and the FFmpeg call.
+
+Support is probed, not assumed. `available_encoders()` runs `ffmpeg -encoders`
+once per binary (cached against its path and mtime) and a format is offered only
+when the encoder it names is present. The API serves that catalogue at
+`/api/v1/artifacts/{id}/formats`, and the picker shows only what the machine can
+write — with the unavailable ones still listed, and why.
+
+The master is never re-encoded. Requesting its own format streams that file;
+requesting another writes a copy into `data/tmp/downloads/` and attaches a
+background task that deletes it once the response is done. A failed or timed-out
+conversion removes its partial output and raises `ARTIFACT_WRITE_FAILED` rather
+than serving a truncated file under a name that claims a format.
+
+`sanitise_download_name()` is the only place a download filename is decided. It
+strips directory separators and control characters, collapses whitespace, drops
+a duplicate audio extension, refuses Windows reserved names, caps the length and
+appends the chosen extension. The frontend previews the result but is not
+trusted with it.
+
 ## Queue and concurrency
 
 `FilesystemJobQueue` implements the `JobQueue` protocol. `claim()` takes an

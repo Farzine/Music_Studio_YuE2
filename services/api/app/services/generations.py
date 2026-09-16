@@ -227,6 +227,7 @@ class GenerationService:
         title: str = "",
         tags: list[str] | None = None,
         priority: int = 0,
+        parent_generation_id: str | None = None,
     ) -> tuple[GenerationJob, SongProject, list[str]]:
         config = config_from_overrides(overrides)
         warnings = self.validate_config(config)
@@ -245,11 +246,30 @@ class GenerationService:
                 lyrics=config.prompt.lyrics,
                 mode=config.prompt.mode,
                 tags=tags or [],
+                # A new project starts out described by the take that created
+                # it, so its settings editor opens on something real.
+                default_config=config,
             )
+
+        if parent_generation_id:
+            # Refuse a lineage that points at nothing: a dangling parent would
+            # show in the history as a take that cannot be opened.
+            parent = self.store.get_job(parent_generation_id)
+            if parent.project_id != project.id:
+                raise ValidationError(
+                    "A new version has to belong to the same project as the take it came from.",
+                    details={
+                        "parameter": "parent_generation_id",
+                        "parent_project_id": parent.project_id,
+                        "project_id": project.id,
+                    },
+                )
 
         job = GenerationJob(
             id=new_id("gen"),
             project_id=project.id,
+            version=self.store.reserve_generation_version(project),
+            parent_generation_id=parent_generation_id,
             title=title or project.title or self._derive_title(config),
             config=config,
             priority=priority,
@@ -285,6 +305,7 @@ class GenerationService:
             project_id=original.project_id,
             title=original.title,
             priority=original.priority,
+            parent_generation_id=original.id,
         )
         return job
 
@@ -297,6 +318,7 @@ class GenerationService:
             overrides=merged,
             project_id=original.project_id,
             title=original.title,
+            parent_generation_id=original.id,
         )
         return job
 

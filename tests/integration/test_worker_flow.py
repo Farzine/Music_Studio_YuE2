@@ -73,7 +73,10 @@ def test_audio_can_be_streamed_and_downloaded(api_client, sample_config):
 
     download = api_client.get(f"/api/v1/artifacts/{job_id}/download")
     assert "attachment" in download.headers["content-disposition"]
-    assert job_id in download.headers["content-disposition"]
+    # No format asked for, so the master FLAC is handed over untouched.
+    assert download.headers["content-type"] == "audio/flac"
+    assert download.content == stream.content
+    assert ".flac" in download.headers["content-disposition"]
 
 
 def test_the_score_is_stored_validated_and_editable(api_client, sample_config):

@@ -5,9 +5,11 @@ import {
   Copy,
   Download,
   FileMusic,
+  GitBranch,
   Heart,
   MoreHorizontal,
   Pause,
+  Pencil,
   Play,
   RefreshCw,
   Trash2,
@@ -31,6 +33,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { formatDateTime, formatDuration } from "@/lib/format";
 import { useDeleteTarget } from "@/store/delete-target";
+import { useGenerationTarget } from "@/store/generation-target";
 import { usePlayer } from "@/store/player";
 
 export default function GenerationPage() {
@@ -42,6 +45,7 @@ export default function GenerationPage() {
   const { data: log } = useJobLog(id);
   const { cancel, retry, duplicate, favorite } = useGenerationActions();
   const requestDelete = useDeleteTarget((state) => state.request);
+  const requestDialog = useGenerationTarget((state) => state.request);
   const { play, track, playing, currentTime, duration, requestSeek } = usePlayer();
 
   const job = streamed ?? data?.generation;
@@ -89,7 +93,17 @@ export default function GenerationPage() {
             <MenuItem asChild>
               <Link href={`/projects/${job.project_id}`}>Open project</Link>
             </MenuItem>
-            <MenuItem onSelect={() => duplicate.mutate({ id: job.id })}>Duplicate settings</MenuItem>
+            <MenuItem onSelect={() => requestAnimationFrame(() => requestDialog("rename", job))}>
+              <Pencil className="h-4 w-4" />
+              Rename
+            </MenuItem>
+            <MenuItem asChild>
+              <Link href={`/create?from=${job.id}`}>
+                <RefreshCw className="h-4 w-4" />
+                Regenerate…
+              </Link>
+            </MenuItem>
+            <MenuItem onSelect={() => duplicate.mutate({ id: job.id })}>Run again unchanged</MenuItem>
             <MenuSeparator />
             <MenuItem
               destructive
@@ -114,6 +128,7 @@ export default function GenerationPage() {
                 <Badge tone={job.status === "COMPLETED" ? "accent" : job.status === "FAILED" ? "danger" : "info"}>
                   {job.status}
                 </Badge>
+                <Badge>version {job.version}</Badge>
                 <Badge>{job.config.prompt.mode}</Badge>
                 <Badge>seed {job.config.sampling.seed}</Badge>
                 <Badge>{String(job.config.model.checkpoint || "default model")}</Badge>
@@ -123,6 +138,19 @@ export default function GenerationPage() {
                   {formatDateTime(job.requested_at)}
                 </span>
               </div>
+
+              {job.parent_generation_id ? (
+                <p className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-ink-faint)]">
+                  <GitBranch className="h-3.5 w-3.5" />
+                  Started from an earlier version, which is unchanged.
+                  <Link
+                    href={`/generations/${job.parent_generation_id}`}
+                    className="underline underline-offset-2 hover:text-[var(--color-ink)]"
+                  >
+                    Open it
+                  </Link>
+                </p>
+              ) : null}
 
               {audio ? (
                 <div className="space-y-3">
@@ -171,11 +199,13 @@ export default function GenerationPage() {
 
               <div className="flex flex-wrap gap-2">
                 {audio ? (
-                  <Button variant="surface" size="sm" asChild>
-                    <a href={api.downloadUrl(job.id)} download>
-                      <Download className="h-3.5 w-3.5" />
-                      Download
-                    </a>
+                  <Button
+                    variant="surface"
+                    size="sm"
+                    onClick={() => requestAnimationFrame(() => requestDialog("download", job))}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download…
                   </Button>
                 ) : null}
                 {running ? (
@@ -185,9 +215,11 @@ export default function GenerationPage() {
                   </Button>
                 ) : (
                   <>
-                    <Button variant="surface" size="sm" onClick={() => retry.mutate(job.id)}>
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      Regenerate
+                    <Button variant="surface" size="sm" asChild>
+                      <Link href={`/create?from=${job.id}`}>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Regenerate…
+                      </Link>
                     </Button>
                     <Button
                       variant="surface"

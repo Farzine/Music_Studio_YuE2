@@ -380,6 +380,12 @@ class GenerationConfig(BaseModel):
 
 
 class SongProject(BaseModel):
+    """A permanent container for one song and every take of it.
+
+    The project holds the settings a new take starts from; each take keeps its
+    own frozen copy. Editing the project therefore never rewrites history.
+    """
+
     id: str
     title: str = ""
     description: str = ""
@@ -389,6 +395,14 @@ class SongProject(BaseModel):
     tags: list[str] = Field(default_factory=list)
     cover_art_path: str | None = None
     current_generation_id: str | None = None
+    #: The configuration a new generation in this project starts from. None on
+    #: a project created before this field existed, and on one whose settings
+    #: have never been edited; the studio defaults are used then.
+    default_config: GenerationConfig | None = None
+    #: Highest take number ever handed out in this project. Kept on the project
+    #: rather than counted from the takes, so deleting a take does not free its
+    #: number for the next one and reorder the history.
+    generation_counter: int = 0
     favorite: bool = False
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -437,8 +451,21 @@ class ArtifactRef(BaseModel):
 
 
 class GenerationJob(BaseModel):
+    """One take. Immutable once it has run, apart from its own metadata.
+
+    ``config`` is the snapshot actually used, written when the job is created
+    and never rewritten afterwards. Regenerating copies it into a new job with
+    a new id, so an earlier take is never overwritten or re-described.
+    """
+
     id: str
     project_id: str
+    #: Position of this take within its project, counting from 1. Assigned once
+    #: and never reused, so deleting version 2 leaves 1 and 3 as they were.
+    version: int = 1
+    #: The take this one was started from, when it came from Regenerate. None
+    #: for a take created from scratch.
+    parent_generation_id: str | None = None
     status: JobStatus = JobStatus.QUEUED
     priority: int = 0
     queue_position: int | None = None

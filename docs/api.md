@@ -129,18 +129,64 @@ A schema parameter carries `enabled`, and `disabled_reason` when it is off:
 
 ## Projects
 
-| Method | Path |
-|---|---|
-| `GET` / `POST` | `/api/v1/projects` |
-| `GET` / `PATCH` / `DELETE` | `/api/v1/projects/{id}` |
+A project is the container a song and all of its versions live in. It can be
+renamed, reconfigured and deleted; the versions inside it cannot be edited.
 
-`GET /api/v1/projects/{id}` returns the project and all of its generations.
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/v1/projects` | Every project, each with `generation_count`, `playable_count` and its latest version. |
+| `POST` | `/api/v1/projects` | Creates an empty project. |
+| `GET` | `/api/v1/projects/{id}` | The project and its complete generation history, newest version first. |
+| `PATCH` | `/api/v1/projects/{id}` | Metadata only: `title`, `description`, `style`, `lyrics`, `mode`, `tags`, `favorite`. |
+| `GET` | `/api/v1/projects/{id}/config` | The configuration the settings editor should open with, and where it came from. |
+| `PUT` | `/api/v1/projects/{id}/config` | Stores the configuration new versions start from. |
+| `DELETE` | `/api/v1/projects/{id}` | Deletes the project and every version in it. |
+
+### Renaming
+
+`PATCH` with `{"title": "..."}`. Surrounding and repeated whitespace is
+normalised. An empty or whitespace-only name is refused with `422` and
+`INVALID_CONFIG`, and the existing name is kept — a project with no name cannot
+be found again.
+
+### Configuration
+
+`GET /api/v1/projects/{id}/config` answers with the configuration **and** its
+`source`, which is one of:
+
+| `source` | Meaning |
+|---|---|
+| `project` | The project's own saved settings. |
+| `latest_generation` | No saved settings yet, so the most recent version's snapshot is offered. |
+| `defaults` | Neither exists, so `configs/yue2.defaults.json` is offered. |
+
+`PUT` takes `{ "config": { … } }`, a partial configuration merged over the
+defaults and validated by the same model the generation endpoint uses — an
+impossible value is refused here rather than several minutes into a run.
+
+Saving changes only where the project's **next** version starts from. Every
+version already generated keeps the snapshot it ran with; nothing under
+`projects/<id>/generations/` is rewritten.
+
+### Project deletion
+
+```json
+{ "deleted": true, "project_id": "prj_…", "title": "Neon Lane",
+  "generations_removed": 3, "generation_ids": ["gen_…", "gen_…", "gen_…"],
+  "had_generations": 3, "complete": true, "failures": [] }
+```
+
+Only this project's own directory and its own job records are removed; other
+projects, the uploads directory and the model files are never involved. As with
+a single generation, `complete: false` names what survived instead of claiming a
+clean delete. A project containing a queued or running generation is refused with
+`409` — cancel it first.
 
 ## Generations
 
 | Method | Path | Notes |
 |---|---|---|
-| `POST` | `/api/v1/generations` | Creates and queues. Body: `{ title, project_id?, priority?, config }`. |
+| `POST` | `/api/v1/generations` | Creates and queues. Body: `{ title, project_id?, parent_generation_id?, priority?, config }`. |
 | `GET` | `/api/v1/generations` | `project_id, status[], mode, search, favorite, min_duration, max_duration, model, limit, offset`. |
 | `GET` / `PATCH` / `DELETE` | `/api/v1/generations/{id}` | PATCH accepts `title` and `favorite`. DELETE is described below. |
 | `POST` | `/api/v1/generations/{id}/cancel` | Cooperative. See below. |
@@ -170,6 +216,24 @@ The response contains the generation, its project, and any warnings. When the
 seed was randomised, the response already carries the concrete seed that will be
 used, with `control_after_generate` set back to `fixed` so re-running reproduces
 that exact take.
+
+### Versions and lineage
+
+Every generation carries two fields that place it in its project's history:
+
+| Field | Meaning |
+|---|---|
+| `version` | Its number in the project, from 1. Handed out once and never reused, so deleting version 2 leaves 1 and 3 where they are. |
+| `parent_generation_id` | The version this one was started from, or `null`. |
+
+Regeneration is an ordinary `POST /api/v1/generations` carrying the earlier
+version's configuration — edited however the user likes — plus its `project_id`
+and its id as `parent_generation_id`. A new version is created; the earlier one
+is not read from again and never written to. A `parent_generation_id` belonging
+to a different project is refused with `422`.
+
+`retry` and `duplicate` do the same thing server-side and record the original as
+the parent automatically.
 
 ### Deletion
 
@@ -213,8 +277,54 @@ as `CANCELLED` when the current stage reaches its next safe boundary.
 |---|---|---|
 | `GET` | `/api/v1/artifacts/{id}` | Artifact list with sizes and SHA-256. |
 | `GET` | `/api/v1/artifacts/{id}/audio` | Streams the canonical audio. Range requests supported, so the player can seek. |
-| `GET` | `/api/v1/artifacts/{id}/download` | Same bytes as an attachment. |
+| `GET` | `/api/v1/artifacts/{id}/formats` | Which formats this installation can deliver, and the default filename. |
+| `GET` | `/api/v1/artifacts/{id}/download?format=&filename=` | The audio as an attachment, converted and renamed on request. |
 | `GET` | `/api/v1/artifacts/{id}/file?path=` | Any artifact recorded on that generation. Paths not on the record, and paths outside the data directory, return 404. |
+
+### Download formats
+
+`GET /api/v1/artifacts/{id}/formats` reports every format with whether it can
+actually be produced here, because support is decided by asking the installed
+FFmpeg which encoders it has rather than by assuming:
+
+```json
+{ "source": { "format": "flac", "extension": ".flac", "bytes": 31754561 },
+  "default_filename": "YuE2-Neon Lane-v2",
+  "ffmpeg": { "path": "/…/tools/ffmpeg/ffmpeg", "present": true },
+  "formats": [
+    { "id": "flac", "label": "FLAC", "lossless": true, "supported": true,
+      "reason": null, "is_source": true, "encoder": "flac" },
+    { "id": "mp3", "label": "MP3", "lossless": false, "supported": true,
+      "reason": null, "is_source": false, "encoder": "libmp3lame" }
+  ] }
+```
+
+An unsupported format stays in the list with the reason rather than vanishing.
+`is_source` marks the format the master already is.
+
+### Download
+
+`GET /api/v1/artifacts/{id}/download` takes two optional parameters:
+
+| Parameter | Behaviour |
+|---|---|
+| `format` | `flac`, `wav`, `mp3`, `m4a` or `ogg`. Defaults to the master's own format. An unknown value is refused with `422`. |
+| `filename` | The name the browser should save it as, without an extension. |
+
+The master is never modified. Asking for its own format streams that file byte
+for byte; asking for another converts a copy into `data/tmp/downloads/`, serves
+it, and deletes it when the response finishes. Files from abandoned downloads are
+swept after fifteen minutes.
+
+The filename is sanitised on the server, so the query string is a request rather
+than a guarantee: directory separators, control characters and Windows reserved
+names are removed, the correct extension is appended, and an extension the caller
+already typed is not repeated. An empty name falls back to
+`<filename_prefix>-<title>-v<version>`.
+
+A conversion that fails or times out deletes its partial output and returns
+`ARTIFACT_WRITE_FAILED` with FFmpeg's own message — a download that claims a
+format is always that format.
 
 ## Scores
 

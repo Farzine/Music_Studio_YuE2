@@ -162,6 +162,58 @@ development, and a test asserts no option the API serves can carry one.
 FFmpeg is not on `PATH`. FLAC and WAV are written by the runtime itself and
 always work.
 
+`make cover` installs a private FFmpeg 7 build into `tools/ffmpeg`, which the
+studio prefers over anything on `PATH`. That build covers every download format.
+
+## A download format is missing from the picker
+
+The picker lists only formats the installed FFmpeg can actually write, because
+offering one that would fail is worse than not offering it. The unavailable ones
+are still listed under "formats unavailable on this machine", each with the
+reason — usually a missing encoder.
+
+What is needed for each:
+
+| Format | Encoder |
+|---|---|
+| FLAC | `flac` |
+| WAV | `pcm_s24le` |
+| MP3 | `libmp3lame` |
+| M4A | `aac` |
+| OGG | `libvorbis` |
+
+Check what your build has with
+`./tools/ffmpeg/ffmpeg -hide_banner -encoders | grep -E "flac|lame|aac|vorbis|pcm_s24le"`.
+The master's own format is always available; it needs no conversion at all.
+
+## A download failed to convert
+
+The response carries `ARTIFACT_WRITE_FAILED` with FFmpeg's own error. The partial
+file is deleted rather than served — a download that claims a format is always
+that format. Download the original FLAC instead, and convert it yourself if you
+need to.
+
+## A project will not delete
+
+A generation inside it is still `QUEUED` or running, and the request is refused
+with `409`. Deleting the directory under a running worker would leave it writing
+into a folder that no longer exists. Cancel the generation, wait for it to settle
+as `CANCELLED`, then delete the project.
+
+## A deleted version's number was not reused
+
+That is deliberate. Version numbers advance from a counter on the project, so
+deleting version 2 leaves 1 and 3 as they are and the next take is version 4.
+Reusing 2 would put two different takes at the same point in the history.
+
+## Editing a project's configuration did not change an existing version
+
+Also deliberate, and the reason the history is worth keeping. A project's
+configuration is the starting point for its *next* version. Every version already
+generated stores the exact settings it ran with, and nothing rewrites them. To
+hear a change, press **Regenerate** on a version, edit whatever you like, and
+generate a new one.
+
 ## Audio will not play or seek in the browser
 
 The player decodes the file to draw a waveform. When the browser cannot decode

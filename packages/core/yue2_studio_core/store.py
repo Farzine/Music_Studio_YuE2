@@ -240,15 +240,48 @@ class Store:
         report["complete"] = not report["failed"]
         return report
 
-    def delete_project(self, project_id: str) -> None:
+    def delete_project(self, project_id: str) -> dict:
+        """Remove a project, its generations and their artifacts.
+
+        Only this project's own directory and its own job records are touched.
+        The report names every generation that went with it, so the caller can
+        tell the user exactly what was removed rather than guessing.
+        """
         directory = self.project_dir(project_id)
         if not directory.is_dir():
             raise NotFoundError(f"project {project_id} not found")
+        report: dict = {"project_id": project_id, "generations_removed": [], "failed": []}
         for job in self.list_jobs():
-            if job.project_id == project_id:
-                (self.jobs_dir / f"{job.id}.json").unlink(missing_ok=True)
+            if job.project_id != project_id:
+                continue
+            try:
+                self.job_path(job.id).unlink(missing_ok=True)
                 self.cancel_marker_path(job.id).unlink(missing_ok=True)
-        shutil.rmtree(directory)
+                report["generations_removed"].append(job.id)
+            except OSError as exc:
+                report["failed"].append({"path": f"jobs/{job.id}.json", "error": str(exc)})
+        try:
+            shutil.rmtree(directory)
+        except OSError as exc:
+            report["failed"].append({"path": str(directory), "error": str(exc)})
+        report["complete"] = not report["failed"]
+        return report
+
+    def reserve_generation_version(self, project: SongProject) -> int:
+        """Take the next version number for a project, in place on ``project``.
+
+        The counter lives on the project so a deleted take does not release its
+        number: reusing one would put two different takes at the same point in
+        the history. The surviving takes are still consulted, so a project made
+        before the counter existed carries on from where it actually is. The
+        caller saves the project; this only reserves the number.
+        """
+        highest = max(
+            (job.version for job in self.iter_jobs() if job.project_id == project.id),
+            default=0,
+        )
+        project.generation_counter = max(project.generation_counter, highest) + 1
+        return project.generation_counter
 
     # -- jobs / generations ---------------------------------------------- #
 

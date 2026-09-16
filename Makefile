@@ -10,7 +10,7 @@ WEB         := $(ROOT)/apps/web
 .DEFAULT_GOAL := help
 .PHONY: help install install-api install-worker install-web models env \
         dev backend worker frontend test test-unit test-integration test-worker mapping cover \
-        smoke-test lint format typecheck clean-data stop
+        smoke-test lint format typecheck backfill-versions clean-data stop
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -82,6 +82,9 @@ format: ## Format the frontend sources
 stop: ## Stop the API and worker started by `make dev`
 	-pkill -f "uvicorn app.main:app"
 	-pkill -f "services.yue2_worker.worker"
+
+backfill-versions: ## Number generations made before versions existed (dry run; add APPLY=1 to write)
+	$(API_VENV)/bin/python scripts/backfill_versions.py $(if $(APPLY),--apply,)
 
 clean-data: ## Delete every generation. Irreversible.
 	@read -p "Delete everything under data/? [y/N] " answer; \

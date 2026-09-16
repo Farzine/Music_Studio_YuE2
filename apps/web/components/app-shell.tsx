@@ -15,6 +15,8 @@ import { usePathname } from "next/navigation";
 import * as React from "react";
 
 import { DeleteGenerationDialogHost } from "@/components/library/delete-generation-dialog";
+import { GenerationDialogHost } from "@/components/library/generation-dialogs";
+import { ProjectDialogHost } from "@/components/projects/project-dialogs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PlayerBar } from "@/features/player/player-bar";
@@ -27,7 +29,7 @@ import { usePlayer } from "@/store/player";
 const NAV = [
   { href: "/create", label: "Create", icon: Sparkles },
   { href: "/library", label: "Library", icon: Library },
-  { href: "/", label: "Projects", icon: FolderOpen },
+  { href: "/projects", label: "Projects", icon: FolderOpen },
   { href: "/system", label: "System", icon: Cpu },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -160,8 +162,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <QueueDrawer />
       <PlayerBar />
-      {/* Mounted once, above everything that can be deleted. */}
+      {/* Mounted once, above everything they can act on. A dialog rendered
+          inside a card would unmount at the moment its card disappears, and an
+          open overlay that unmounts leaves the page unclickable. */}
       <DeleteGenerationDialogHost />
+      <GenerationDialogHost />
+      <ProjectDialogHost />
 
       {/* Mobile navigation, above the player. */}
       <nav

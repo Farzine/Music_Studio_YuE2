@@ -17,6 +17,9 @@ class GenerationCreate(BaseModel):
     """A partial configuration merged over configs/yue2.defaults.json."""
 
     project_id: str | None = None
+    #: The take this one was started from, when the user pressed Regenerate.
+    #: Recorded for lineage only: the earlier take is never modified.
+    parent_generation_id: str | None = None
     title: str = ""
     tags: list[str] = Field(default_factory=list)
     priority: int = 0
@@ -39,6 +42,7 @@ def create_generation(
         title=payload.title,
         tags=payload.tags,
         priority=payload.priority,
+        parent_generation_id=payload.parent_generation_id,
     )
     return {
         "generation": job.model_dump(mode="json"),

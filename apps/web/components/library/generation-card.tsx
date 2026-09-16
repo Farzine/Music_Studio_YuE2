@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   Music2,
   Pause,
+  Pencil,
   Play,
   RefreshCw,
   Settings2,
@@ -28,6 +29,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { formatDuration, formatRelative } from "@/lib/format";
 import { useDeleteTarget } from "@/store/delete-target";
+import { useGenerationTarget } from "@/store/generation-target";
 import { usePlayer } from "@/store/player";
 import type { GenerationJob, JobStatus } from "@/types/api";
 
@@ -60,8 +62,9 @@ const RUNNING = new Set<JobStatus>([
 
 export function GenerationCard({ job, layout = "list" }: { job: GenerationJob; layout?: "list" | "grid" }) {
   const { play, track, playing } = usePlayer();
-  const { cancel, retry, duplicate, favorite } = useGenerationActions();
+  const { cancel, duplicate, favorite } = useGenerationActions();
   const requestDelete = useDeleteTarget((state) => state.request);
+  const requestDialog = useGenerationTarget((state) => state.request);
 
   const audio = job.artifacts.find((artifact) => artifact.kind === "audio");
   const hasScore = job.artifacts.some((artifact) => artifact.kind === "score");
@@ -108,13 +111,15 @@ export function GenerationCard({ job, layout = "list" }: { job: GenerationJob; l
           </MenuItem>
         ) : null}
         {audio ? (
-          <MenuItem asChild>
-            <a href={api.downloadUrl(job.id)} download>
-              <Download className="h-4 w-4" />
-              Download
-            </a>
+          <MenuItem onSelect={() => requestAnimationFrame(() => requestDialog("download", job))}>
+            <Download className="h-4 w-4" />
+            Download…
           </MenuItem>
         ) : null}
+        <MenuItem onSelect={() => requestAnimationFrame(() => requestDialog("rename", job))}>
+          <Pencil className="h-4 w-4" />
+          Rename
+        </MenuItem>
         <MenuSeparator />
         {running ? (
           <MenuItem onSelect={() => cancel.mutate(job.id)}>
@@ -123,9 +128,11 @@ export function GenerationCard({ job, layout = "list" }: { job: GenerationJob; l
           </MenuItem>
         ) : (
           <>
-            <MenuItem onSelect={() => retry.mutate(job.id)}>
-              <RefreshCw className="h-4 w-4" />
-              Regenerate
+            <MenuItem asChild>
+              <Link href={`/create?from=${job.id}`}>
+                <RefreshCw className="h-4 w-4" />
+                Regenerate…
+              </Link>
             </MenuItem>
             <MenuItem
               onSelect={() =>
@@ -136,7 +143,7 @@ export function GenerationCard({ job, layout = "list" }: { job: GenerationJob; l
               }
             >
               <Copy className="h-4 w-4" />
-              Duplicate settings
+              Run again with a new seed
             </MenuItem>
           </>
         )}
@@ -161,6 +168,7 @@ export function GenerationCard({ job, layout = "list" }: { job: GenerationJob; l
   const meta = (
     <div className="flex flex-wrap items-center gap-1.5">
       <Badge tone={TONE[job.status]}>{running && job.progress.label ? job.progress.label : job.status}</Badge>
+      <Badge tone="outline">v{job.version}</Badge>
       <Badge tone="outline">{job.config.prompt.mode}</Badge>
       {audio?.duration_seconds ? <Badge tone="outline">{formatDuration(audio.duration_seconds)}</Badge> : null}
       <Badge tone="outline">seed {job.config.sampling.seed}</Badge>

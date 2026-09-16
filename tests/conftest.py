@@ -61,6 +61,7 @@ def api_client(data_dir: Path):
         deps.store_provider,
         deps.queue_provider,
         deps.capability_provider,
+        deps.project_service_provider,
         deps.system_info_provider,
         deps.generation_service_provider,
     ):
@@ -76,6 +77,7 @@ def api_client(data_dir: Path):
         deps.store_provider,
         deps.queue_provider,
         deps.capability_provider,
+        deps.project_service_provider,
         deps.system_info_provider,
         deps.generation_service_provider,
     ):

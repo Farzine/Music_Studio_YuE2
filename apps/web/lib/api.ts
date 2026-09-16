@@ -2,10 +2,14 @@ import type {
   BudgetResponse,
   Capabilities,
   DeleteReport,
+  DownloadOptions,
   GenerationJob,
   GpuInventory,
   GenerationSchema,
   Preset,
+  ProjectConfigResponse,
+  ProjectDeleteReport,
+  ProjectSummary,
   QueueView,
   ScoreBundle,
   SongProject,
@@ -87,15 +91,23 @@ export const api = {
     request<Preset>("/api/v1/presets", { method: "POST", body: JSON.stringify(body) }),
   deletePreset: (id: string) => request<void>(`/api/v1/presets/${id}`, { method: "DELETE" }),
 
-  projects: () => request<{ items: SongProject[] }>("/api/v1/projects"),
+  projects: () => request<{ items: ProjectSummary[] }>("/api/v1/projects"),
   project: (id: string) =>
     request<{ project: SongProject; generations: GenerationJob[] }>(`/api/v1/projects/${id}`),
   updateProject: (id: string, body: Record<string, unknown>) =>
     request<SongProject>(`/api/v1/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  deleteProject: (id: string) => request<void>(`/api/v1/projects/${id}`, { method: "DELETE" }),
+  projectConfig: (id: string) => request<ProjectConfigResponse>(`/api/v1/projects/${id}/config`),
+  saveProjectConfig: (id: string, config: Record<string, unknown>) =>
+    request<SongProject>(`/api/v1/projects/${id}/config`, {
+      method: "PUT",
+      body: JSON.stringify({ config }),
+    }),
+  deleteProject: (id: string) =>
+    request<ProjectDeleteReport>(`/api/v1/projects/${id}`, { method: "DELETE" }),
 
   createGeneration: (body: {
     project_id?: string | null;
+    parent_generation_id?: string | null;
     title?: string;
     tags?: string[];
     priority?: number;
@@ -165,7 +177,19 @@ export const api = {
     );
   },
 
+  downloadOptions: (id: string) => request<DownloadOptions>(`/api/v1/artifacts/${id}/formats`),
+
   audioUrl: (id: string) => `${BASE}/api/v1/artifacts/${id}/audio`,
-  downloadUrl: (id: string) => `${BASE}/api/v1/artifacts/${id}/download`,
+  /**
+   * Download link. Conversion happens on the backend, which is also where the
+   * filename is sanitised: the query string is a request, not a guarantee.
+   */
+  downloadUrl: (id: string, options?: { format?: string; filename?: string }) => {
+    const search = new URLSearchParams();
+    if (options?.format) search.set("format", options.format);
+    if (options?.filename) search.set("filename", options.filename);
+    const query = search.toString();
+    return `${BASE}/api/v1/artifacts/${id}/download${query ? `?${query}` : ""}`;
+  },
   eventsUrl: (id: string) => `${BASE}/api/v1/generations/${id}/events`,
 };

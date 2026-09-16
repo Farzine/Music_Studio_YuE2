@@ -76,6 +76,10 @@ export interface GenerationConfig {
 export interface GenerationJob {
   id: string;
   project_id: string;
+  /** Position within the project, from 1. Assigned once and never reused. */
+  version: number;
+  /** The take this one was started from, when it came from Regenerate. */
+  parent_generation_id: string | null;
   status: JobStatus;
   priority: number;
   queue_position: number | null;
@@ -127,9 +131,60 @@ export interface SongProject {
   mode: GenerationMode;
   tags: string[];
   current_generation_id: string | null;
+  /** Settings a new take in this project starts from; null until edited. */
+  default_config: GenerationConfig | null;
+  generation_counter: number;
   favorite: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/** A project as the list view receives it, with its counts precomputed. */
+export interface ProjectSummary extends SongProject {
+  generation_count: number;
+  playable_count: number;
+  latest_generation_id: string | null;
+  latest_generation_at: string | null;
+}
+
+export interface ProjectConfigResponse {
+  config: GenerationConfig;
+  /** Where the editor's starting values came from. */
+  source: "project" | "latest_generation" | "defaults";
+}
+
+export interface ProjectDeleteReport {
+  deleted: boolean;
+  project_id: string;
+  title: string;
+  generations_removed: number;
+  generation_ids: string[];
+  had_generations: number;
+  complete: boolean;
+  failures: { path: string; error: string }[];
+}
+
+/** One downloadable format, with whether this machine can actually write it. */
+export interface DownloadFormat {
+  id: string;
+  label: string;
+  extension: string;
+  mime: string;
+  lossless: boolean;
+  description: string;
+  supported: boolean;
+  reason: string | null;
+  /** True for the format the master already is: served with no conversion. */
+  is_source: boolean;
+  encoder: string;
+}
+
+export interface DownloadOptions {
+  generation_id: string;
+  source: { format: string | null; extension: string; bytes: number };
+  default_filename: string;
+  ffmpeg: { path: string | null; present: boolean };
+  formats: DownloadFormat[];
 }
 
 export interface ParameterOption {

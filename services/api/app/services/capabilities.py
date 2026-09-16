@@ -15,6 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from yue2_studio_core.delivery import format_catalogue
 from yue2_studio_core.parameters import backend_capabilities, describe_registry
 from yue2_studio_core.settings import Settings
 
@@ -158,6 +159,9 @@ class CapabilityService:
                 "present": ffmpeg_version is not None,
                 "path": str(ffmpeg_binary) if ffmpeg_binary.is_file() else None,
             },
+            #: Download formats this installation can actually produce, asked
+            #: of the FFmpeg that is really here rather than assumed.
+            "download_formats": format_catalogue(ffmpeg=ffmpeg_binary),
             "sheetsage2_present": (sheetsage2_model / "model.safetensors").is_file(),
             "sheetsage2_env": self.settings.sheetsage2_python.is_file(),
             "vae_legacy_present": Path(self.settings.vae_legacy_reference).is_dir(),

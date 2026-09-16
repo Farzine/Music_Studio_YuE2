@@ -43,7 +43,9 @@ export default function DashboardPage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Projects</h2>
-          <span className="text-xs text-[var(--color-ink-faint)]">{projects?.items.length ?? 0}</span>
+          <Link href="/projects" className="text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]">
+            View all {projects?.items.length ? `(${projects.items.length})` : ""}
+          </Link>
         </div>
         {projectsLoading ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -61,8 +63,11 @@ export default function DashboardPage() {
                     <p className="mt-1 line-clamp-2 text-xs text-[var(--color-ink-faint)]">
                       {project.style || "No style yet"}
                     </p>
-                    <div className="mt-3 flex items-center gap-2">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <Badge>{project.mode}</Badge>
+                      <Badge tone="outline">
+                        {project.generation_count} version{project.generation_count === 1 ? "" : "s"}
+                      </Badge>
                       <span className="text-[11px] text-[var(--color-ink-faint)]">
                         {formatRelative(project.updated_at)}
                       </span>

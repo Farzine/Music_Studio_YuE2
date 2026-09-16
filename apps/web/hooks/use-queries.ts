@@ -8,6 +8,7 @@ import type { GenerationJob } from "@/types/api";
 const ACTIVE = new Set([
   "QUEUED",
   "LOADING_MODEL",
+  "TRANSCRIBING",
   "PLANNING",
   "GENERATING",
   "DECODING",
@@ -27,6 +28,8 @@ export const keys = {
   generation: (id: string) => ["generation", id] as const,
   projects: ["projects"] as const,
   project: (id: string) => ["project", id] as const,
+  projectConfig: (id: string) => ["project-config", id] as const,
+  downloadOptions: (id: string) => ["download-options", id] as const,
   score: (id: string) => ["score", id] as const,
   manifest: (id: string) => ["manifest", id] as const,
   log: (id: string) => ["log", id] as const,
@@ -91,7 +94,70 @@ export function useGeneration(id: string | undefined) {
 
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: api.projects });
 export const useProject = (id: string | undefined) =>
-  useQuery({ queryKey: keys.project(id ?? ""), queryFn: () => api.project(id as string), enabled: Boolean(id) });
+  useQuery({
+    queryKey: keys.project(id ?? ""),
+    queryFn: () => api.project(id as string),
+    enabled: Boolean(id),
+    // A project page is a generation history: it has to follow a running take.
+    refetchInterval: (query) =>
+      (query.state.data?.generations ?? []).some((job: GenerationJob) => ACTIVE.has(job.status))
+        ? 2_000
+        : false,
+  });
+export const useProjectConfig = (id: string | undefined) =>
+  useQuery({
+    queryKey: keys.projectConfig(id ?? ""),
+    queryFn: () => api.projectConfig(id as string),
+    enabled: Boolean(id),
+  });
+
+/** What the picked generation can be downloaded as, asked of the backend. */
+export const useDownloadOptions = (id: string | undefined) =>
+  useQuery({
+    queryKey: keys.downloadOptions(id ?? ""),
+    queryFn: () => api.downloadOptions(id as string),
+    enabled: Boolean(id),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+/**
+ * Renaming, editing settings and deleting a project.
+ *
+ * Every one of these changes what the project list and the project page show,
+ * so they invalidate both rather than patching a cached copy: a stale count or
+ * a deleted project still on screen is worse than one extra fetch.
+ */
+export function useProjectActions() {
+  const client = useQueryClient();
+  const invalidate = (id?: string) => {
+    client.invalidateQueries({ queryKey: keys.projects });
+    if (id) {
+      client.invalidateQueries({ queryKey: keys.project(id) });
+      client.invalidateQueries({ queryKey: keys.projectConfig(id) });
+    }
+  };
+  return {
+    rename: useMutation({
+      mutationFn: ({ id, title }: { id: string; title: string }) => api.updateProject(id, { title }),
+      onSuccess: (project) => invalidate(project.id),
+    }),
+    updateConfig: useMutation({
+      mutationFn: ({ id, config }: { id: string; config: Record<string, unknown> }) =>
+        api.saveProjectConfig(id, config),
+      onSuccess: (project) => invalidate(project.id),
+    }),
+    remove: useMutation({
+      mutationFn: api.deleteProject,
+      onSuccess: (report) => {
+        invalidate(report.project_id);
+        // Deleting a project removes its takes, so every generation list is stale.
+        client.invalidateQueries({ queryKey: ["generations"] });
+        client.invalidateQueries({ queryKey: keys.queue });
+      },
+    }),
+  };
+}
 export const useScore = (id: string | undefined) =>
   useQuery({ queryKey: keys.score(id ?? ""), queryFn: () => api.score(id as string), enabled: Boolean(id), retry: false });
 export const useManifest = (id: string | undefined) =>
