@@ -19,7 +19,6 @@ import {
 import Link from "next/link";
 import * as React from "react";
 
-import { DeleteGenerationDialog } from "@/components/library/delete-generation-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,6 +27,7 @@ import { useGenerationActions } from "@/hooks/use-queries";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { formatDuration, formatRelative } from "@/lib/format";
+import { useDeleteTarget } from "@/store/delete-target";
 import { usePlayer } from "@/store/player";
 import type { GenerationJob, JobStatus } from "@/types/api";
 
@@ -59,8 +59,8 @@ const RUNNING = new Set<JobStatus>([
 
 export function GenerationCard({ job, layout = "list" }: { job: GenerationJob; layout?: "list" | "grid" }) {
   const { play, track, playing } = usePlayer();
-  const { cancel, retry, duplicate, favorite, remove } = useGenerationActions();
-  const [deleting, setDeleting] = React.useState(false);
+  const { cancel, retry, duplicate, favorite } = useGenerationActions();
+  const requestDelete = useDeleteTarget((state) => state.request);
 
   const audio = job.artifacts.find((artifact) => artifact.kind === "audio");
   const hasScore = job.artifacts.some((artifact) => artifact.kind === "score");
@@ -143,9 +143,11 @@ export function GenerationCard({ job, layout = "list" }: { job: GenerationJob; l
         <MenuItem
           destructive
           disabled={running}
-          onSelect={(event) => {
-            event.preventDefault();
-            setDeleting(true);
+          onSelect={() => {
+            // Let the menu close on its own, then open the dialog on the next
+            // frame. Two overlays open at once share one body pointer-events
+            // lock, and whichever tears down second can leave it applied.
+            requestAnimationFrame(() => requestDelete(job));
           }}
         >
           <Trash2 className="h-4 w-4" />
@@ -220,8 +222,7 @@ export function GenerationCard({ job, layout = "list" }: { job: GenerationJob; l
   );
 
   return (
-    <>
-      <Card interactive className={cn("overflow-hidden", isCurrent && "border-[var(--color-accent)]")}>
+    <Card interactive className={cn("overflow-hidden", isCurrent && "border-[var(--color-accent)]")}>
         <div className={cn("flex gap-4 p-4", layout === "grid" && "flex-col gap-3")}>
           <div className={cn("flex gap-4", layout === "grid" && "items-center gap-3")}>
             {playButton}
@@ -289,14 +290,6 @@ export function GenerationCard({ job, layout = "list" }: { job: GenerationJob; l
             ) : null}
           </div>
         </div>
-      </Card>
-
-      <DeleteGenerationDialog
-        job={job}
-        open={deleting}
-        onOpenChange={setDeleting}
-        onDelete={(id) => remove.mutateAsync(id)}
-      />
-    </>
+    </Card>
   );
 }

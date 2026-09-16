@@ -22,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorNotice, Skeleton, WarningNotice } from "@/components/ui/feedback";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
-import { DeleteGenerationDialog } from "@/components/library/delete-generation-dialog";
 import { GenerationStatus } from "@/components/generation/generation-status";
 import { TechnicalDetails } from "@/features/generation/technical-details";
 import { Waveform, usePeaks } from "@/features/player/waveform";
@@ -31,6 +30,7 @@ import { useGenerationStream } from "@/hooks/use-generation-stream";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { formatDateTime, formatDuration } from "@/lib/format";
+import { useDeleteTarget } from "@/store/delete-target";
 import { usePlayer } from "@/store/player";
 
 export default function GenerationPage() {
@@ -40,8 +40,8 @@ export default function GenerationPage() {
   const { data, isLoading } = useGeneration(id);
   const { job: streamed, connected } = useGenerationStream(id);
   const { data: log } = useJobLog(id);
-  const { cancel, retry, duplicate, favorite, remove } = useGenerationActions();
-  const [deleting, setDeleting] = React.useState(false);
+  const { cancel, retry, duplicate, favorite } = useGenerationActions();
+  const requestDelete = useDeleteTarget((state) => state.request);
   const { play, track, playing, currentTime, duration, requestSeek } = usePlayer();
 
   const job = streamed ?? data?.generation;
@@ -62,13 +62,6 @@ export default function GenerationPage() {
 
   return (
     <div className="space-y-5">
-      <DeleteGenerationDialog
-        job={job}
-        open={deleting}
-        onOpenChange={setDeleting}
-        onDelete={(id) => remove.mutateAsync(id)}
-        onDeleted={() => router.push("/library")}
-      />
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4" />
@@ -101,9 +94,9 @@ export default function GenerationPage() {
             <MenuItem
               destructive
               disabled={running}
-              onSelect={(event) => {
-                event.preventDefault();
-                setDeleting(true);
+              onSelect={() => {
+                // See GenerationCard: close the menu before opening the dialog.
+                requestAnimationFrame(() => requestDelete(job, { redirectTo: "/library" }));
               }}
             >
               <Trash2 className="h-4 w-4" />

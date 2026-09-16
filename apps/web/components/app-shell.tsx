@@ -14,10 +14,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 
+import { DeleteGenerationDialogHost } from "@/components/library/delete-generation-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PlayerBar } from "@/features/player/player-bar";
 import { QueueDrawer } from "@/features/queue/queue-drawer";
+import { useOverlayLockGuard } from "@/hooks/use-overlay-lock-guard";
 import { useHealth, useQueue } from "@/hooks/use-queries";
 import { cn } from "@/lib/cn";
 import { usePlayer } from "@/store/player";
@@ -66,6 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: queue } = useQueue();
   const track = usePlayer((state) => state.track);
   const busy = (queue?.active.length ?? 0) + (queue?.depth ?? 0);
+  useOverlayLockGuard();
 
   return (
     <div className="min-h-dvh">
@@ -157,6 +160,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <QueueDrawer />
       <PlayerBar />
+      {/* Mounted once, above everything that can be deleted. */}
+      <DeleteGenerationDialogHost />
 
       {/* Mobile navigation, above the player. */}
       <nav
