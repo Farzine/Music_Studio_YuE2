@@ -87,6 +87,15 @@ class BackendResult:
     runtime: dict[str, Any]
     request_identity: str
     semantic_tokens: np.ndarray | None = None
+    #: Token accounting for the run: what was available, what the score needed,
+    #: and how the acoustic stage ended.
+    budget: dict[str, Any] = field(default_factory=dict)
+    #: "EOS" when the song reached its own ending, "MAX_TOKENS" when the
+    #: ceiling stopped it. The difference decides whether the result is a
+    #: finished song or a fragment.
+    termination_reason: str | None = None
+    #: Limits the studio changed, each with the requested value beside it.
+    adjustments: list[dict[str, Any]] = field(default_factory=list)
 
 
 @runtime_checkable

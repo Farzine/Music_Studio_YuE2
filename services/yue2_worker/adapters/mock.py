@@ -14,6 +14,8 @@ import math
 import time
 
 import numpy as np
+from yue2_studio_core.abc import score_duration_seconds
+from yue2_studio_core.budget import estimate_budget, load_model_limits, resolve_effective_tokens
 from yue2_studio_core.constants import LATENT_FRAME_RATE, SAMPLE_RATE
 from yue2_studio_core.errors import ErrorCode, StudioError
 from yue2_studio_core.models import GenerationConfig, JobStatus
@@ -51,6 +53,10 @@ class MockBackend:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._config: GenerationConfig | None = None
+        self._truncated = False
+        self._termination: str | None = None
+        self._budget: dict = {}
+        self._adjustments: list[dict] = []
 
     async def get_capabilities(self) -> dict:
         return {
@@ -71,8 +77,56 @@ class MockBackend:
 
     async def prepare(self, config: GenerationConfig, context: GenerationContext) -> None:
         self._config = config
+        self._budget = {}
+        self._adjustments = []
+        self._truncated = False
+        self._termination = None
         context.reporter.begin(JobStatus.LOADING_MODEL, "loading_model", "Loading model")
         await asyncio.sleep(0.2)
+
+    def _effective_tokens(
+        self, context: GenerationContext, plan: PlanResult, planned: float | None
+    ) -> int:
+        """Apply the same plan-versus-limit decision the native backend does."""
+        config = context.config
+        limits = load_model_limits(str(self.settings.configs_path))
+        estimate = estimate_budget(
+            limits=limits,
+            cot=config.prompt.mode.cot,
+            style=config.prompt.style,
+            lyrics=config.prompt.lyrics,
+            requested_seconds=config.sampling.effective_duration_seconds,
+            abc=plan.abc or "",
+            planner_max_tokens=config.planner.max_tokens,
+            planned_seconds=planned,
+        )
+        decision = resolve_effective_tokens(
+            limits=limits,
+            estimate=estimate,
+            requested_tokens=config.sampling.max_tokens,
+            fit_to_plan=config.sampling.fit_to_plan,
+        )
+        if not decision.allowed:
+            refusal = decision.refusal or {}
+            raise StudioError(
+                ErrorCode[refusal.get("code", "TOKEN_BUDGET_EXCEEDED")],
+                refusal.get("message", "The request does not fit the model's token budget."),
+                stage="planning",
+                details={"budget": estimate.to_dict()},
+            )
+        self._budget = {
+            "plan": {**estimate.to_dict(), "effective_tokens": decision.effective_tokens},
+            "limits": limits.to_dict(),
+        }
+        if decision.adjustment and planned is not None:
+            self._adjustments.append(decision.adjustment)
+            context.reporter.note(
+                f"The planned song runs {planned:.0f} s, longer than the "
+                f"{decision.adjustment['requested']:.0f} s limit. The limit was raised to "
+                f"{decision.adjustment['effective']:.0f} s so the song can finish.",
+                severity="WARNING",
+            )
+        return decision.effective_tokens
 
     async def generate_plan(self, context: GenerationContext) -> PlanResult:
         started = time.perf_counter()
@@ -94,7 +148,17 @@ class MockBackend:
     async def generate_audio(self, context: GenerationContext, plan: PlanResult) -> AudioTokensResult:
         started = time.perf_counter()
         config = context.config
-        frames = min(config.sampling.max_tokens, int(20 * LATENT_FRAME_RATE))
+        # The mock song is exactly as long as the plan says, so the same
+        # budget decision the native backend makes can be exercised here
+        # without a GPU.
+        # Direct Audio writes no score, so there is nothing to predict from and
+        # the limit stands as given — the same position the native backend is in.
+        planned = score_duration_seconds(plan.abc or "")
+        wanted = int((planned or 20.0) * LATENT_FRAME_RATE)
+        budget = self._effective_tokens(context, plan, planned)
+        frames = min(budget, wanted)
+        self._truncated = frames < wanted
+        self._termination = "MAX_TOKENS" if self._truncated else "EOS"
         context.reporter.begin(JobStatus.GENERATING, "semantic", "Generating audio tokens", unit="tokens")
         for step in range(1, 51):
             if context.cancelled():
@@ -114,7 +178,7 @@ class MockBackend:
         return AudioTokensResult(
             latents=latents,
             semantic_token_count=frames,
-            truncated=False,
+            truncated=self._truncated,
             timing={"semantic_seconds": time.perf_counter() - started, "synthesis_seconds": 0.0},
             handle=None,
         )
@@ -163,6 +227,16 @@ class MockBackend:
             runtime={"backend": "mock", "latent_frame_rate": LATENT_FRAME_RATE},
             request_identity=identity,
             semantic_tokens=None,
+            budget={
+                **self._budget,
+                "semantic": {
+                    "budget_tokens": config.sampling.max_tokens,
+                    "tokens_generated": tokens.semantic_token_count,
+                    "termination_reason": self._termination,
+                },
+            },
+            termination_reason=self._termination,
+            adjustments=list(self._adjustments),
         )
 
     async def cancel(self, job_id: str) -> None:

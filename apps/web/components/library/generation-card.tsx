@@ -41,6 +41,7 @@ const TONE: Record<JobStatus, "neutral" | "accent" | "warn" | "danger" | "info">
   DECODING: "info",
   POST_PROCESSING: "info",
   COMPLETED: "accent",
+  INCOMPLETE: "warn",
   FAILED: "danger",
   CANCEL_REQUESTED: "warn",
   CANCELLED: "warn",
@@ -163,10 +164,18 @@ export function GenerationCard({ job, layout = "list" }: { job: GenerationJob; l
       <Badge tone="outline">{job.config.prompt.mode}</Badge>
       {audio?.duration_seconds ? <Badge tone="outline">{formatDuration(audio.duration_seconds)}</Badge> : null}
       <Badge tone="outline">seed {job.config.sampling.seed}</Badge>
-      {truncated ? (
-        <Badge tone="warn" title="Generation stopped at its token limit; the song may end abruptly.">
+      {job.status === "INCOMPLETE" ? (
+        <Badge
+          tone="warn"
+          title="Generation stopped at its token limit before the song ended. The audio is part of a song."
+        >
           <AlertTriangle className="h-3 w-3" />
-          truncated
+          unfinished
+        </Badge>
+      ) : truncated ? (
+        <Badge tone="warn" title="The score reached its token limit before it was finished.">
+          <AlertTriangle className="h-3 w-3" />
+          plan truncated
         </Badge>
       ) : null}
     </div>

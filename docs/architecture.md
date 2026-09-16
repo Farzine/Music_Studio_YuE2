@@ -221,6 +221,49 @@ Conversely, `steps` → `ode_steps`, `cfg` → `cfg_scale`, `max_duration` →
 `semantic.max_tokens`, `tile_size` → `vae_core_frames` and `max_abc_tokens` →
 `abc.max_tokens` are true equivalents and are wired through.
 
+## Token budgeting
+
+`packages/core/yue2_studio_core/budget.py` is the only place token arithmetic
+lives; the API, the worker and the frontend all read its answer.
+
+The constraint is specific. The acoustic stage is autoregressive over codec
+tokens, and `yue2.sampling.generate_tokens` refuses when
+`len(prefix) + max_tokens > context`, so the instruction, style, lyrics and
+score are subtracted from the same 24,576-token window the song must fit in.
+Limits are read from the checkpoint itself — `max_position_embeddings` from the
+model's `config.json`, the frame rate from the decoder's `sample_rate` over its
+`downsampling_ratio` — and `configs/model-limits.json` is only the fallback.
+Context is counted with the checkpoint's own tokenizer, reproduced in
+`tokenizer.py`; a test asserts the count matches `token_prefixes` exactly for
+every mode, with and without a score.
+
+Two estimates are produced, and the difference is the point:
+
+| Stage | When | Score | Use |
+|---|---|---|---|
+| `request` | before queueing | not written, so the planner's whole ceiling is reserved | refuse an impossible request instantly |
+| `plan` | after planning, before audio | written, so its cost and its intended length are both known | decide whether the song fits its limit |
+
+The second estimate is what fixes truncation. The written score states its own
+duration through its tempo and bar count, which predicts the final audio length
+within a few percent, so the decision is made before the expensive stage runs.
+`resolve_effective_tokens` is a pure function returning one of three outcomes —
+generate as asked, raise the limit to fit the song and report the change, or
+refuse — and both the native and mock backends call it, so there is one
+implementation to test and no way for them to disagree.
+
+Raising the limit cannot make a song longer than the model intended; it only
+stops it being cut short. The cost is a proportionally larger key/value cache,
+about 0.11 MB per token, which the estimate reports.
+
+### When a run still ends early
+
+Direct Audio writes no score, so nothing can predict its length. If the budget
+runs out there, the run ends as `INCOMPLETE` with `termination_reason:
+MAX_TOKENS` — never `COMPLETED`. The audio is kept and playable, a declared fade
+is applied to the cut, and the manifest records the budget, the tokens
+generated and the reason. A fragment is never presented as a finished song.
+
 ## The duration/token relationship
 
 The decoder's `sample_rate` is 48000 and its `downsampling_ratio` is 1920, so

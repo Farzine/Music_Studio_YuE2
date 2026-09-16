@@ -217,6 +217,58 @@ export default function GenerationPage() {
                 </Button>
               </div>
 
+              {job.effective_adjustments.length > 0 ? (
+                <WarningNotice>
+                  <p className="font-medium">A limit was adjusted for this run</p>
+                  <ul className="mt-1.5 space-y-1">
+                    {job.effective_adjustments.map((adjustment) => (
+                      <li key={adjustment.parameter} className="text-[var(--color-ink-muted)]">
+                        <span className="font-mono text-xs">{adjustment.parameter}</span>: requested{" "}
+                        {adjustment.requested}
+                        {adjustment.unit === "seconds" ? "s" : ""}, used {adjustment.effective}
+                        {adjustment.unit === "seconds" ? "s" : ""} — {adjustment.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </WarningNotice>
+              ) : null}
+
+              {job.status === "INCOMPLETE" ? (
+                <WarningNotice>
+                  <p className="font-medium">This song did not reach its ending</p>
+                  <p className="mt-1 text-[var(--color-ink-muted)]">
+                    Generation stopped at its token limit after{" "}
+                    {(job.budget?.semantic?.tokens_generated ?? 0).toLocaleString()} of{" "}
+                    {(job.budget?.semantic?.budget_tokens ?? 0).toLocaleString()} audio tokens, so the
+                    audio below is part of a song rather than a finished one. It is kept so you can hear
+                    it, and is not counted as a completed generation.
+                  </p>
+                  <p className="mt-1.5 text-[var(--color-ink-muted)]">{job.error_guidance}</p>
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    <Button
+                      variant="surface"
+                      size="sm"
+                      onClick={() =>
+                        duplicate.mutate({
+                          id: job.id,
+                          overrides: {
+                            sampling: {
+                              max_duration_seconds: Math.min(
+                                960,
+                                Math.ceil(((job.budget?.semantic?.tokens_generated ?? 0) / 25) * 2),
+                              ),
+                            },
+                          },
+                        })
+                      }
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Retry with a longer limit
+                    </Button>
+                  </div>
+                </WarningNotice>
+              ) : null}
+
               {job.warnings.length > 0 ? (
                 <WarningNotice>
                   <ul className="list-disc space-y-1 pl-4">

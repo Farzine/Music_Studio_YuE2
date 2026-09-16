@@ -10,6 +10,7 @@ import secrets
 from typing import Any
 
 from yue2_studio_core.abc import validate as validate_abc
+from yue2_studio_core.budget import Risk
 from yue2_studio_core.errors import (
     ConflictError,
     ErrorCode,
@@ -34,6 +35,7 @@ from yue2_studio_core.queue import FilesystemJobQueue
 from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store
 
+from app.services.budget import BudgetService
 from app.services.capabilities import CapabilityService
 
 logger = logging.getLogger(__name__)
@@ -48,11 +50,13 @@ class GenerationService:
         store: Store,
         queue: FilesystemJobQueue,
         capabilities: CapabilityService,
+        budget: BudgetService,
         settings: Settings,
     ) -> None:
         self.store = store
         self.queue = queue
         self.capabilities = capabilities
+        self.budget = budget
         self.settings = settings
 
     # -- validation -------------------------------------------------------- #
@@ -81,6 +85,7 @@ class GenerationService:
 
         self._validate_model(config)
         self._validate_reference_audio(config)
+        warnings.extend(self._validate_token_budget(config))
 
         violations = unsupported_parameters_in_use(config, backend)
         if violations:
@@ -128,6 +133,27 @@ class GenerationService:
         if config.prompt.lyrics and len(config.prompt.lyrics) > 8000:
             warnings.append("Very long lyrics can crowd the context window and lead to a truncated plan.")
         return warnings
+
+    def _validate_token_budget(self, config: GenerationConfig) -> list[str]:
+        """Refuse a request that cannot fit, and warn about one that barely does.
+
+        The acoustic stage refuses outright when the prefix plus the token
+        budget exceeds the context window, so a request past that point would
+        fail several minutes into a run. Catching it here costs nothing and the
+        message can name the actual numbers.
+        """
+        estimate = self.budget.estimate(config)
+        if estimate.risk is Risk.UNSAFE:
+            raise StudioError(
+                ErrorCode.TOKEN_BUDGET_EXCEEDED,
+                " ".join(estimate.reasons)
+                or "The request does not fit in the model's context window.",
+                stage="validation",
+                details={"parameter": "sampling.max_duration_seconds", "budget": estimate.to_dict()},
+            )
+        if estimate.risk is Risk.WARNING:
+            return list(estimate.reasons)
+        return []
 
     def _validate_model(self, config: GenerationConfig) -> None:
         """Refuse an unknown or incomplete model, naming the actual problem."""
@@ -228,6 +254,7 @@ class GenerationService:
             config=config,
             priority=priority,
             warnings=warnings,
+            budget={"request": self.budget.estimate(config).to_dict()},
             progress=ProgressState(stage="queued", label="Queued"),
         )
         directory = self.store.prepare_generation_dir(project.id, job.id)

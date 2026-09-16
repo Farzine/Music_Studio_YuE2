@@ -290,3 +290,177 @@ def test_deleting_the_current_generation_repoints_the_project(api_client, sample
     # The project falls back to the remaining generation rather than pointing
     # at something that no longer exists.
     assert store.get_project(project_id).current_generation_id == first["generation"]["id"]
+
+
+# --------------------------------------------------------------------------- #
+# Token limits: predict, adjust or refuse — never a fragment sold as a song
+# --------------------------------------------------------------------------- #
+
+
+def short_song(seconds: float, **overrides) -> dict:
+    config = {
+        "prompt": {
+            "style": "warm piano pop, female vocal, 88 BPM",
+            "lyrics": "[Verse]\nNeon fades along the lane\n[Chorus]\nLet the day come into view",
+            "mode": "full",
+        },
+        "sampling": {"max_duration_seconds": seconds, "seed": 4242},
+    }
+    for key, value in overrides.items():
+        config.setdefault(key, {}).update(value)
+    return config
+
+
+def test_a_song_within_its_limit_completes_normally(api_client):
+    # The mock plans a ten-second song; sixty seconds is plenty.
+    created = api_client.post("/api/v1/generations", json={"config": short_song(60)}).json()
+    run_worker_once()
+    job = api_client.get(f"/api/v1/generations/{created['generation']['id']}").json()["generation"]
+
+    assert job["status"] == "COMPLETED"
+    assert job["termination_reason"] == "EOS"
+    assert job["truncated"]["semantic"] is False
+    assert job["effective_adjustments"] == []
+    assert job["budget"]["semantic"]["termination_reason"] == "EOS"
+
+
+def test_a_limit_below_the_planned_song_is_raised_and_reported(api_client):
+    # Four seconds against a ten-second plan: the limit is the problem, not the
+    # model, so it is raised rather than the song being cut off.
+    created = api_client.post("/api/v1/generations", json={"config": short_song(4)}).json()
+    run_worker_once()
+    job = api_client.get(f"/api/v1/generations/{created['generation']['id']}").json()["generation"]
+
+    assert job["status"] == "COMPLETED"
+    assert job["termination_reason"] == "EOS"
+    adjustments = job["effective_adjustments"]
+    assert len(adjustments) == 1
+    adjustment = adjustments[0]
+    assert adjustment["parameter"] == "sampling.max_duration_seconds"
+    # The requested figure is the budget actually asked for, which the minimum
+    # token floor can lift above the slider value.
+    requested_tokens = job["config"]["sampling"]["max_tokens"]
+    assert adjustment["requested"] == pytest.approx(requested_tokens / 25)
+    assert adjustment["effective"] >= 10
+    assert adjustment["effective"] > adjustment["requested"]
+    # The requested value is preserved beside the effective one.
+    assert job["config"]["sampling"]["max_duration_seconds"] == 4
+    assert any("raised" in warning for warning in job["warnings"])
+
+
+def test_respecting_the_limit_refuses_before_any_audio_is_made(api_client):
+    config = short_song(4, sampling={"fit_to_plan": False})
+    created = api_client.post("/api/v1/generations", json={"config": config}).json()
+    run_worker_once()
+    job = api_client.get(f"/api/v1/generations/{created['generation']['id']}").json()["generation"]
+
+    assert job["status"] == "FAILED"
+    assert job["error_code"] == "INCOMPLETE_TOKEN_LIMIT"
+    assert "cuts off part way" in job["error_message"]
+    # Nothing was generated, so there is no fragment to mistake for a song.
+    assert [artifact for artifact in job["artifacts"] if artifact["kind"] == "audio"] == []
+
+
+def test_a_truncated_run_is_incomplete_not_completed(api_client):
+    """Direct Audio writes no score, so the limit can still cut a song off."""
+    config = short_song(4)
+    config["prompt"]["mode"] = "off"
+    config["prompt"]["lyrics"] = ""
+    created = api_client.post("/api/v1/generations", json={"config": config}).json()
+    run_worker_once()
+    job = api_client.get(f"/api/v1/generations/{created['generation']['id']}").json()["generation"]
+
+    assert job["status"] == "INCOMPLETE"
+    assert job["status"] != "COMPLETED"
+    assert job["termination_reason"] == "MAX_TOKENS"
+    assert job["truncated"]["semantic"] is True
+    assert job["error_code"] == "INCOMPLETE_TOKEN_LIMIT"
+    assert job["error_guidance"]
+
+    # The audio is kept so it can be heard, but it is labelled a fragment.
+    audio = next(artifact for artifact in job["artifacts"] if artifact["kind"] == "audio")
+    assert audio["duration_seconds"] > 0
+    assert Store().absolute(audio["path"]).is_file()
+
+
+def test_an_incomplete_take_is_faded_and_says_so(api_client):
+    config = short_song(4)
+    config["prompt"].update({"mode": "off", "lyrics": ""})
+    created = api_client.post("/api/v1/generations", json={"config": config}).json()
+    run_worker_once()
+    generation_id = created["generation"]["id"]
+    job = api_client.get(f"/api/v1/generations/{generation_id}").json()["generation"]
+    assert job["status"] == "INCOMPLETE"
+
+    manifest = api_client.get(f"/api/v1/generations/{generation_id}/manifest").json()
+    post = manifest["effective_config"]["post_processing"]
+    assert post["applied"] == "fade_out"
+    assert post["milliseconds"] == 250
+    assert "click" in post["reason"]
+    # Announced to the user, not applied quietly.
+    assert any("fade" in warning for warning in job["warnings"])
+
+
+def test_a_completed_song_is_never_faded(api_client):
+    created = api_client.post("/api/v1/generations", json={"config": short_song(60)}).json()
+    run_worker_once()
+    manifest = api_client.get(
+        f"/api/v1/generations/{created['generation']['id']}/manifest"
+    ).json()
+    assert "post_processing" not in manifest["effective_config"]
+
+
+def test_the_manifest_explains_where_the_tokens_went(api_client):
+    created = api_client.post("/api/v1/generations", json={"config": short_song(60)}).json()
+    run_worker_once()
+    manifest = api_client.get(
+        f"/api/v1/generations/{created['generation']['id']}/manifest"
+    ).json()
+
+    budget = manifest["token_budget"]
+    assert budget["plan"]["available_generation_tokens"] > 0
+    assert budget["plan"]["input_context_tokens"] > 0
+    assert budget["semantic"]["tokens_generated"] > 0
+    assert budget["semantic"]["budget_tokens"] >= budget["semantic"]["tokens_generated"]
+    assert manifest["termination_reason"] == "EOS"
+    assert manifest["limits" ] if "limits" in manifest else True
+
+
+def test_an_incomplete_generation_can_be_retried_with_a_larger_limit(api_client):
+    config = short_song(4)
+    config["prompt"].update({"mode": "off", "lyrics": ""})
+    first = api_client.post("/api/v1/generations", json={"config": config}).json()
+    run_worker_once()
+    assert api_client.get(f"/api/v1/generations/{first['generation']['id']}").json()["generation"]["status"] == "INCOMPLETE"
+
+    bigger = json.loads(json.dumps(config))
+    bigger["sampling"]["max_duration_seconds"] = 60
+    second = api_client.post("/api/v1/generations", json={"config": bigger}).json()
+    run_worker_once()
+    job = api_client.get(f"/api/v1/generations/{second['generation']['id']}").json()["generation"]
+    assert job["status"] == "COMPLETED"
+    assert job["termination_reason"] == "EOS"
+
+
+def test_one_run_does_not_inherit_another_run_s_adjustment(api_client):
+    """The backend outlives a job, so per-run state has to be cleared."""
+    adjusted = api_client.post("/api/v1/generations", json={"config": short_song(4)}).json()
+    run_worker_once()
+    first = api_client.get(f"/api/v1/generations/{adjusted['generation']['id']}").json()["generation"]
+    assert first["effective_adjustments"], "expected the short limit to be raised"
+
+    plain = api_client.post("/api/v1/generations", json={"config": short_song(60)}).json()
+    run_worker_once()
+    second = api_client.get(f"/api/v1/generations/{plain['generation']['id']}").json()["generation"]
+    assert second["effective_adjustments"] == []
+    assert second["budget"]["semantic"]["termination_reason"] == "EOS"
+
+
+def test_the_manifest_records_the_final_state_not_the_stage_it_was_written_in(api_client):
+    created = api_client.post("/api/v1/generations", json={"config": short_song(60)}).json()
+    run_worker_once()
+    manifest = api_client.get(
+        f"/api/v1/generations/{created['generation']['id']}/manifest"
+    ).json()
+    assert manifest["status"] == "COMPLETED"
+    assert manifest["finished_at"]

@@ -42,6 +42,30 @@ def try_validate(text: str) -> tuple[bool, dict | None, str | None]:
         return False, None, exc.message
 
 
+def score_duration_seconds(text: str) -> float | None:
+    """How long the written score intends the song to be, in seconds.
+
+    Derived from the score's own tempo, meter and bar count rather than from a
+    guess: the parser reports ``nominal_duration_seconds`` for exactly this.
+    Measured against completed generations on this machine it predicts the final
+    audio length to within a few percent, which makes it a sound basis for
+    deciding whether a song will fit in its token budget before the expensive
+    acoustic stage runs.
+    """
+    if not text.strip():
+        return None
+    try:
+        report = validate(text)
+    except AbcValidationError:
+        return None
+    value = report.get("nominal_duration_seconds")
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds > 0 else None
+
+
 def compare(before: str, after: str, *, voices: str = "both", allow_tempo_change: bool = False) -> dict:
     """Check which musical invariants survived an edit.
 

@@ -120,6 +120,35 @@ export function TechnicalDetails({ job }: { job: GenerationJob }) {
             ))}
           </section>
 
+          <section>
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
+              Token budget
+            </h4>
+            {job.budget ? (
+              <>
+                <Row label="Context window" value={(job.budget.plan?.context_tokens ?? job.budget.request?.context_tokens ?? "—").toLocaleString?.() ?? "—"} />
+                <Row
+                  label="Style, lyrics and score"
+                  value={(job.budget.plan?.input_context_tokens ?? job.budget.request?.input_context_tokens ?? 0).toLocaleString()}
+                />
+                <Row
+                  label="Available for audio"
+                  value={(job.budget.plan?.available_generation_tokens ?? job.budget.request?.available_generation_tokens ?? 0).toLocaleString()}
+                />
+                <Row label="Budget used for this run" value={(job.budget.semantic?.budget_tokens ?? 0).toLocaleString()} />
+                <Row label="Tokens generated" value={(job.budget.semantic?.tokens_generated ?? 0).toLocaleString()} />
+                {job.budget.plan?.planned_seconds != null ? (
+                  <Row label="Score length" value={`${job.budget.plan.planned_seconds.toFixed(0)} s`} />
+                ) : null}
+                <Row label="Ended because" value={job.termination_reason ?? "—"} />
+              </>
+            ) : (
+              <p className="text-xs text-[var(--color-ink-faint)]">
+                Token accounting is recorded from the first run after this feature was added.
+              </p>
+            )}
+          </section>
+
           <section className="xl:col-span-2">
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
               Effective configuration

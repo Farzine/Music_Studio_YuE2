@@ -37,6 +37,36 @@ def _record(store: Store, kind: str, path: Path, **extra) -> ArtifactRef:
     )
 
 
+def apply_incomplete_fade(audio: np.ndarray, sample_rate: int, milliseconds: int) -> tuple[np.ndarray, dict | None]:
+    """Fade out audio that was cut off mid-phrase.
+
+    A generation stopped at its token ceiling ends on an arbitrary sample, and
+    a hard cut there is an audible click on top of an already abrupt ending.
+    A short fade removes the click without pretending the song finished.
+
+    Applied only to an incomplete take, never to one that reached its own
+    ending, and always recorded in the manifest so the audio is never quietly
+    altered.
+    """
+    if milliseconds <= 0 or audio.size == 0:
+        return audio, None
+    samples = min(int(sample_rate * milliseconds / 1000), audio.shape[0])
+    if samples < 2:
+        return audio, None
+    ramp = np.linspace(1.0, 0.0, samples, dtype=np.float32)
+    faded = audio.astype(np.float32, copy=True)
+    if faded.ndim == 1:
+        faded[-samples:] *= ramp
+    else:
+        faded[-samples:, :] *= ramp[:, None]
+    return faded, {
+        "applied": "fade_out",
+        "milliseconds": milliseconds,
+        "samples": samples,
+        "reason": "the take was cut off at its token limit; the fade removes the cut's click",
+    }
+
+
 def write_audio(store: Store, directory: Path, audio: np.ndarray, sample_rate: int, output_format: str) -> list[ArtifactRef]:
     """Write the canonical audio, plus an MP3 delivery copy when requested."""
     canonical_suffix = ".wav" if output_format == "wav" else ".flac"

@@ -57,6 +57,35 @@ and does not require editing `.env`.
 | `GET` | `/api/v1/models/capabilities` | What this installation can do, with a reason for everything it cannot. |
 | `GET` | `/api/v1/generation/schema` | The parameter registry annotated for the active backend. The frontend renders forms from this. |
 | `GET` | `/api/v1/generation/workflow-mapping` | The generated ComfyUI mapping, for the technical drawer. |
+| `POST` | `/api/v1/generation/estimate` | Token budget for a request, before it is queued. Takes the same partial config a generation does. |
+| `GET` | `/api/v1/generation/limits` | The active checkpoint's own limits, and where each number came from. |
+
+### Token budget
+
+```jsonc
+{
+  "estimate": {
+    "risk": "UNSAFE",                      // SAFE | WARNING | UNSAFE
+    "exact_tokenisation": true,            // counted with the checkpoint's tokenizer
+    "context_tokens": 24576,
+    "input_context_tokens": 111,           // instruction, style, lyrics, markers
+    "plan_reserve_tokens": 4096,           // held back until the score exists
+    "available_generation_tokens": 20166,
+    "requested_tokens": 24000,
+    "excess_tokens": 3834,
+    "max_safe_seconds": 806.6,
+    "kv_cache_bytes": 2760998912,
+    "reasons": ["The requested 960 s needs 24,000 audio tokens, but only 20,166 are available…"],
+    "remedies": ["Reduce the maximum duration to 807 s or less.", "…"]
+  },
+  "limits": { "context_tokens": 24576, "supports_continuation": false, "sources": {…} }
+}
+```
+
+`exact_tokenisation: false` means the checkpoint tokenizer could not be loaded
+and the figures are approximate; `tokenisation_note` says why. A request whose
+risk is `UNSAFE` is refused by `POST /api/v1/generations` with
+`TOKEN_BUDGET_EXCEEDED` and the same estimate in `details.budget`.
 
 A capability entry:
 
@@ -157,6 +186,19 @@ its latents, its logs and its manifest, and returns what actually happened:
 remain would leave orphans nobody goes looking for. Only that generation's own
 directory is touched — model files, shared caches and other projects are never
 involved. A running generation is refused with `409`; cancel it first.
+
+### Unfinished generations
+
+A run whose acoustic stage hit its token budget before the song ended settles as
+`INCOMPLETE`, never `COMPLETED`, with `error_code: INCOMPLETE_TOKEN_LIMIT` and
+`termination_reason: MAX_TOKENS`. The audio is kept and served like any other,
+because it is worth hearing, but the status says plainly that it is part of a
+song. `budget.semantic` gives the tokens generated against the budget, and the
+manifest records the fade applied to the cut.
+
+When the studio raises a limit so a song can finish, the change appears in
+`effective_adjustments` with the requested value beside the effective one.
+Nothing is ever changed silently.
 
 ### Cancellation
 

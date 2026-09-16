@@ -78,15 +78,39 @@ chunks, so it stops at the next safe boundary rather than instantly. The UI
 shows *Cancellation requested…* for that interval. `CANCEL_POLL_INTERVAL_SECONDS`
 controls how often the running job checks.
 
-## The result is marked truncated
+## A generation finished as "unfinished"
 
-The model reached its token ceiling before finishing. The audio is still valid
-and usually playable; it may just end abruptly.
+Status `INCOMPLETE`, error code `INCOMPLETE_TOKEN_LIMIT`. The model was still
+mid-song when its token budget ran out, so the audio is part of a song. It is
+kept and playable, and a short fade is applied to the cut so it does not click,
+but it is deliberately **not** recorded as completed.
 
-* `truncated.abc` — the plan hit **ABC max tokens**.
-* `truncated.semantic` — the song hit **Maximum duration**.
+Why it can still happen after the budget check:
 
-Raise the relevant ceiling and regenerate with the same seed to compare.
+* **Direct Audio** writes no score, so there is nothing to predict the length
+  from and the limit stands exactly as set. Raise Maximum duration and retry —
+  the result page offers a one-click retry at roughly double the length reached.
+* **Let the song finish is off.** With it on, a limit shorter than the planned
+  song is raised automatically instead.
+* The score under-ran its own estimate by more than the 15% tolerance, which is
+  uncommon.
+
+`truncated.abc` is a different thing: the *score* hit **ABC max tokens** before
+it was finished, so the composition the song is built on is itself incomplete.
+Raise ABC max tokens or shorten the lyrics.
+
+## "This request does not fit the model's context window"
+
+Error code `TOKEN_BUDGET_EXCEEDED`, refused before anything is queued. The
+duration asked for, plus the instruction, style, lyrics and score, exceeds the
+model's 24,576-token window. The message states the requested tokens, the
+available tokens and the longest duration that does fit; the Create screen
+offers to set that value.
+
+This runtime generates a song in one autoregressive pass and exposes no
+continuation, resume or audio-prefix entry point, so a longer song genuinely
+cannot be assembled from segments. The remedies are real ones: a shorter
+duration, or shorter lyrics to free context.
 
 ## torch does not see the GPU
 

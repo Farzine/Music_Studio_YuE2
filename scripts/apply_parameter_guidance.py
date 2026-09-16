@@ -225,6 +225,22 @@ G = {
   extremes="If the model reaches the ceiling the result is marked truncated and may end abruptly. Long songs are also where GPU memory runs out.",
   cost="This is the single biggest influence on both generation time and VRAM. Roughly, time scales with the audio produced."),
 
+"sampling.fit_to_plan": dict(severity="info",
+  what="The model is never told how long to make a song: it writes what the style, lyrics and score imply, then stops. The duration limit is a hard cut, not a target, so a limit shorter than the song truncates it. With this on, the limit is raised to fit the song the model actually planned.",
+  more="On, a song that would have been cut off instead plays through to its ending. The change is always reported on the result, never made quietly.",
+  less="Off, the duration limit is respected exactly, and a song that needs more is refused before generating rather than delivered half-finished.",
+  recommended="On. Raising the limit cannot make a song longer than the model intended, only stop it being cut short.",
+  extremes="A song too long for the model's context window is refused either way; this runtime generates in one pass and cannot continue across segments.",
+  cost="A larger budget reserves a proportionally larger key/value cache, roughly 0.11 MB per second of headroom."),
+
+"output.fade_out_incomplete_ms": dict(severity="info",
+  what="A short fade applied only when a take was cut off before the song ended. A hard cut lands on an arbitrary point in the waveform and clicks; the fade removes that without pretending the song finished.",
+  more="A longer fade hides the cut more gently but trims more of the audio that was generated.",
+  less="Zero leaves the raw cut, clicks included.",
+  recommended="250 ms.",
+  extremes="It is never applied to a song that reached its own ending, and it is always recorded in the manifest.",
+  cost="None worth measuring."),
+
 "sampling.max_tokens_override": dict(severity="caution",
   what="Sets the length ceiling directly in model units instead of in seconds. Twenty-five units is one second of audio.",
   recommended="Leave empty and use Maximum duration, which is the same control in friendlier units.",

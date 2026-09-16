@@ -10,6 +10,7 @@ export type JobStatus =
   | "DECODING"
   | "POST_PROCESSING"
   | "COMPLETED"
+  | "INCOMPLETE"
   | "FAILED"
   | "CANCEL_REQUESTED"
   | "CANCELLED";
@@ -86,6 +87,24 @@ export interface GenerationJob {
   artifacts: ArtifactRef[];
   warnings: string[];
   truncated: Record<string, boolean>;
+  budget: {
+    request?: BudgetEstimate;
+    plan?: BudgetEstimate;
+    limits?: ModelLimits;
+    semantic?: {
+      budget_tokens: number;
+      tokens_generated: number;
+      termination_reason: string | null;
+    };
+  } | null;
+  termination_reason: string | null;
+  effective_adjustments: {
+    parameter: string;
+    requested: number;
+    effective: number;
+    unit: string;
+    reason: string;
+  }[];
   request_identity: string | null;
   error_code: string | null;
   error_message: string | null;
@@ -226,6 +245,64 @@ export interface GpuInventory {
   error: string | null;
   cuda_visible_devices: string | null;
   note: string | null;
+}
+
+export type Risk = "SAFE" | "WARNING" | "UNSAFE";
+
+/** Token accounting for one request, served by /api/v1/generation/estimate. */
+export interface BudgetEstimate {
+  stage: "request" | "plan";
+  risk: Risk;
+  exact_tokenisation: boolean;
+  tokenisation_note: string | null;
+  context_tokens: number;
+  input_context_tokens: number;
+  prefix_breakdown: {
+    document: number;
+    instruction_style_lyrics: number;
+    markers: number;
+    score: number;
+  };
+  plan_reserve_tokens: number;
+  reserved_tokens: number;
+  safety_margin_tokens: number;
+  available_generation_tokens: number;
+  requested_tokens: number;
+  requested_seconds: number;
+  max_safe_tokens: number;
+  max_safe_seconds: number;
+  planned_seconds: number | null;
+  planned_tokens: number | null;
+  kv_cache_bytes: number;
+  cfg_branches: number;
+  supports_continuation: boolean;
+  supports_chunked_generation: boolean;
+  reasons: string[];
+  remedies: string[];
+  excess_tokens: number;
+  effective_tokens?: number;
+  effective_seconds?: number;
+}
+
+export interface ModelLimits {
+  model_id: string;
+  protocol: string;
+  context_tokens: number;
+  latent_frame_rate: number;
+  reserved_tokens: number;
+  safety_margin_tokens: number;
+  warning_threshold: number;
+  plan_length_tolerance: number;
+  supports_continuation: boolean;
+  supports_chunked_generation: boolean;
+  capability_note: string;
+  kv_cache_bytes_per_token: number;
+  sources: Record<string, string>;
+}
+
+export interface BudgetResponse {
+  estimate: BudgetEstimate;
+  limits: ModelLimits;
 }
 
 export interface DeleteReport {

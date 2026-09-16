@@ -73,13 +73,26 @@ class JobStatus(str, Enum):
     DECODING = "DECODING"
     POST_PROCESSING = "POST_PROCESSING"
     COMPLETED = "COMPLETED"
+    #: Audio was produced, but the model was cut off before the song ended.
+    #: Deliberately not COMPLETED: the file is a fragment, not a finished song.
+    INCOMPLETE = "INCOMPLETE"
     FAILED = "FAILED"
     CANCEL_REQUESTED = "CANCEL_REQUESTED"
     CANCELLED = "CANCELLED"
 
     @property
     def is_terminal(self) -> bool:
-        return self in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
+        return self in {
+            JobStatus.COMPLETED,
+            JobStatus.INCOMPLETE,
+            JobStatus.FAILED,
+            JobStatus.CANCELLED,
+        }
+
+    @property
+    def produced_audio(self) -> bool:
+        """Whether a listenable file exists, finished or not."""
+        return self in {JobStatus.COMPLETED, JobStatus.INCOMPLETE}
 
     @property
     def is_active(self) -> bool:
@@ -115,9 +128,20 @@ ALLOWED_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
     JobStatus.PLANNING: {JobStatus.GENERATING, JobStatus.CANCEL_REQUESTED, JobStatus.FAILED},
     JobStatus.GENERATING: {JobStatus.DECODING, JobStatus.CANCEL_REQUESTED, JobStatus.FAILED},
     JobStatus.DECODING: {JobStatus.POST_PROCESSING, JobStatus.CANCEL_REQUESTED, JobStatus.FAILED},
-    JobStatus.POST_PROCESSING: {JobStatus.COMPLETED, JobStatus.CANCEL_REQUESTED, JobStatus.FAILED},
-    JobStatus.CANCEL_REQUESTED: {JobStatus.CANCELLED, JobStatus.COMPLETED, JobStatus.FAILED},
+    JobStatus.POST_PROCESSING: {
+        JobStatus.COMPLETED,
+        JobStatus.INCOMPLETE,
+        JobStatus.CANCEL_REQUESTED,
+        JobStatus.FAILED,
+    },
+    JobStatus.CANCEL_REQUESTED: {
+        JobStatus.CANCELLED,
+        JobStatus.COMPLETED,
+        JobStatus.INCOMPLETE,
+        JobStatus.FAILED,
+    },
     JobStatus.COMPLETED: set(),
+    JobStatus.INCOMPLETE: set(),
     JobStatus.FAILED: set(),
     JobStatus.CANCELLED: set(),
 }
@@ -252,6 +276,12 @@ class SemanticConfig(SamplingBlock):
     #: it unless ``max_tokens_override`` is set.
     max_duration_seconds: float = Field(default=360.0, gt=0.0, le=960.0)
     max_tokens_override: int | None = Field(default=None, ge=1, le=MAX_SEMANTIC_TOKENS)
+    #: The model decides how long a song is; this limit is a hard stop, not a
+    #: target. When the written score is longer than the limit allows, raise the
+    #: limit to fit the score rather than cutting the song off part way. The
+    #: adjustment is always reported, never silent, and is still bounded by the
+    #: context window.
+    fit_to_plan: bool = True
 
     @model_validator(mode="after")
     def _derive_tokens(self) -> "SemanticConfig":
@@ -307,6 +337,10 @@ class DecoderConfig(BaseModel):
 
 class OutputConfig(BaseModel):
     format: OutputFormat = OutputFormat.FLAC
+    #: Applied only to an incomplete take, where the audio stops mid-phrase and
+    #: a hard cut would click. Recorded in the manifest; never applied to a song
+    #: that reached its own ending.
+    fade_out_incomplete_ms: int = Field(default=250, ge=0, le=5000)
     filename_prefix: str = Field(default="YuE2", max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
     #: Keep the runtime's own FLAC alongside a converted delivery file.
     keep_canonical: bool = True
@@ -416,6 +450,14 @@ class GenerationJob(BaseModel):
     artifacts: list[ArtifactRef] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     truncated: dict[str, bool] = Field(default_factory=dict)
+    #: Token accounting for this run: what was available, what was asked for,
+    #: what the written score needed and how the run ended.
+    budget: dict[str, Any] | None = None
+    #: "EOS" when the song reached its own ending, "MAX_TOKENS" when the ceiling
+    #: stopped it, "CANCELLED" when the user did.
+    termination_reason: str | None = None
+    #: An adjustment the studio made, with the requested value beside it.
+    effective_adjustments: list[dict[str, Any]] = Field(default_factory=list)
     request_identity: str | None = None
     error_code: str | None = None
     error_message: str | None = None

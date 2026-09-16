@@ -17,6 +17,10 @@ class ErrorCode(str, Enum):
     INVALID_ABC = "INVALID_ABC"
     AUDIO_INPUT_ERROR = "AUDIO_INPUT_ERROR"
     INFERENCE_FAILED = "INFERENCE_FAILED"
+    #: The acoustic stage hit its token ceiling before the song ended.
+    INCOMPLETE_TOKEN_LIMIT = "INCOMPLETE_TOKEN_LIMIT"
+    #: The request cannot fit in the model's context window at all.
+    TOKEN_BUDGET_EXCEEDED = "TOKEN_BUDGET_EXCEEDED"
     DECODER_FAILED = "DECODER_FAILED"
     ARTIFACT_WRITE_FAILED = "ARTIFACT_WRITE_FAILED"
     CANCELLED = "CANCELLED"
@@ -46,6 +50,15 @@ GUIDANCE: dict[ErrorCode, str] = {
     ErrorCode.INVALID_ABC: "The supplied ABC score could not be used as a planner input.",
     ErrorCode.AUDIO_INPUT_ERROR: "The reference audio could not be read.",
     ErrorCode.INFERENCE_FAILED: "Generation failed inside the model runtime. See the job log.",
+    ErrorCode.INCOMPLETE_TOKEN_LIMIT: (
+        "The song did not reach its own ending before the duration limit was used up, so the audio "
+        "stops part way through. Raise the maximum duration to at least the planned length, or "
+        "shorten the lyrics so the model writes a shorter song."
+    ),
+    ErrorCode.TOKEN_BUDGET_EXCEEDED: (
+        "The requested song does not fit in the model's context window alongside its style, lyrics "
+        "and score. Reduce the maximum duration, or shorten the lyrics to free context."
+    ),
     ErrorCode.DECODER_FAILED: "Audio decoding failed. Try the tiled decoder with a smaller tile.",
     ErrorCode.ARTIFACT_WRITE_FAILED: "Artifacts could not be written. Check disk space and permissions on DATA_DIR.",
     ErrorCode.CANCELLED: "The job was cancelled.",

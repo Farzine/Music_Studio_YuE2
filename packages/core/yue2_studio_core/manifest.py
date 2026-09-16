@@ -56,6 +56,10 @@ def build_manifest(
         "hardware": {**hardware, "host": host_info()},
         "timing": json.loads(job.timing.model_dump_json()),
         "truncated": job.truncated,
+        # Enough to explain, after the fact, why a run ended where it did.
+        "token_budget": job.budget,
+        "termination_reason": job.termination_reason,
+        "effective_adjustments": job.effective_adjustments,
         "warnings": list(warnings or []) + list(job.warnings),
         "artifacts": artifacts,
     }

@@ -26,6 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "packages" / "core"))
 
+from yue2_studio_core.constants import LATENT_FRAME_RATE  # noqa: E402
 from yue2_studio_core.errors import ErrorCode, StudioError, classify_exception  # noqa: E402
 from yue2_studio_core.errors import GUIDANCE  # noqa: E402
 from yue2_studio_core.models import GenerationJob, JobStatus, utcnow  # noqa: E402
@@ -239,9 +240,25 @@ class Worker:
 
             reporter.begin(JobStatus.POST_PROCESSING, "post_processing", "Saving artifacts")
             post_started = time.perf_counter()
+
+            # A run that stopped at its token ceiling did not produce a song; it
+            # produced part of one. That is recorded before anything is written,
+            # so nothing downstream can mistake it for a finished result.
+            incomplete = bool(tokens.truncated)
+            job.termination_reason = result.termination_reason or ("MAX_TOKENS" if incomplete else "EOS")
+            job.budget = {**(job.budget or {}), **result.budget}
+            job.effective_adjustments = list(result.adjustments)
+
+            samples = audio.audio
+            post_processing: dict | None = None
+            if incomplete:
+                samples, post_processing = artifact_writer.apply_incomplete_fade(
+                    samples, audio.sample_rate, job.config.output.fade_out_incomplete_ms
+                )
+
             job.artifacts = []
             job.artifacts += artifact_writer.write_audio(
-                self.store, directory, audio.audio, audio.sample_rate, job.config.output.format.value
+                self.store, directory, samples, audio.sample_rate, job.config.output.format.value
             )
             score, score_artifacts = artifact_writer.write_score(self.store, job, plan.abc)
             job.artifacts += score_artifacts
@@ -266,15 +283,46 @@ class Worker:
             job.timing.gpu_peak_bytes = snapshot.get("peak_allocated_bytes")
 
             if plan.truncated:
-                reporter.note("The symbolic plan hit its token limit and was truncated.", severity="WARNING")
-            if tokens.truncated:
-                reporter.note("Audio generation hit its token limit; the song may end abruptly.", severity="WARNING")
+                reporter.note(
+                    f"The score reached its {job.config.planner.max_tokens:,}-token limit before it was "
+                    "finished, so the composition the song is built on is itself incomplete. Raise ABC "
+                    "max tokens, or shorten the lyrics.",
+                    severity="WARNING",
+                )
+            if incomplete:
+                semantic = (result.budget.get("semantic") or {}) if result.budget else {}
+                generated = semantic.get("tokens_generated", tokens.semantic_token_count)
+                budget_tokens = semantic.get("budget_tokens", job.config.sampling.max_tokens)
+                reporter.note(
+                    f"The song did not reach its own ending: generation stopped at the "
+                    f"{budget_tokens:,}-token limit after {generated:,} tokens "
+                    f"({generated / LATENT_FRAME_RATE:.0f} s of audio). The result is part of a song, "
+                    "not a finished one.",
+                    severity="ERROR",
+                )
+                if post_processing:
+                    reporter.note(
+                        f"A {post_processing['milliseconds']} ms fade was applied to the cut so it does "
+                        "not click. The audio is otherwise untouched.",
+                        severity="WARNING",
+                    )
 
-            # Stamp the completion time and the full elapsed time before the
-            # manifest is built, so the manifest is a complete record.
+            # Stamp the outcome, the completion time and the elapsed time before
+            # the manifest is built, so the manifest records the run's final
+            # state rather than the stage it was in while being written.
             job.finished_at = utcnow()
+            job.status = JobStatus.INCOMPLETE if incomplete else JobStatus.COMPLETED
+            if incomplete:
+                job.error_code = ErrorCode.INCOMPLETE_TOKEN_LIMIT.value
+                job.error_message = (
+                    "Generation stopped at its token limit before the song ended, so the audio is a "
+                    "fragment rather than a finished song."
+                )
+                job.error_guidance = GUIDANCE[ErrorCode.INCOMPLETE_TOKEN_LIMIT]
             job.timing.post_processing_seconds = round(time.perf_counter() - post_started, 3)
             job.timing.total_seconds = round(time.perf_counter() - started, 3)
+            if post_processing:
+                result.effective_config["post_processing"] = post_processing
             manifest_artifact = artifact_writer.write_manifest(
                 self.store,
                 directory,
@@ -285,9 +333,19 @@ class Worker:
                 hardware=snapshot,
             )
             job.artifacts.append(manifest_artifact)
-            self.store.transition(job, JobStatus.COMPLETED, strict=False)
-            self.store.append_log(job, "INFO", "completed", "Generation complete.")
-            logger.info("generation complete", extra={"generation_id": job.id})
+            self.store.save_job(job)
+
+            if incomplete:
+                self.store.append_log(
+                    job, "ERROR", "incomplete", "Generation ended at the token limit, not at the song's end."
+                )
+                logger.warning(
+                    "generation incomplete",
+                    extra={"generation_id": job.id, "stage": "semantic"},
+                )
+            else:
+                self.store.append_log(job, "INFO", "completed", "Generation complete.")
+                logger.info("generation complete", extra={"generation_id": job.id})
 
             project = self.store.get_project(job.project_id)
             project.current_generation_id = job.id

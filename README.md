@@ -20,6 +20,7 @@ Verified on the target hardware (NVIDIA RTX A6000, 48 GB, driver 560.28.03):
 | Output | 48 kHz stereo, 24-bit FLAC (or WAV; MP3 as an explicit conversion) |
 | Measured | 30 s of audio in 28.6 s wall clock, 7.24 GiB peak VRAM |
 | Stages | transcribe (covers) → plan → acoustic tokens → synthesis → decode, each reported separately |
+| Limits | 24,576-token window read from the checkpoint; 25 tokens per second of audio, so ~13–16 min of song once the prompt is subtracted |
 | GPUs | every card is listed on the System page with its free memory; pick one there, no restart |
 
 Modes: **Full Song**, **Melody Guided**, **Direct Audio**, **Score Edit** and
@@ -103,12 +104,20 @@ runtime has no equivalent for any of them. Setting one is refused with the
 reason, and the UI shows the control disabled with that reason attached —
 it is never accepted and then ignored.
 
-**3. Progress is never invented.** Token stages report real counts and a rate,
+**3. A fragment is never sold as a song.** The model decides how long a song
+is; the duration setting is a hard stop, not a target. The studio counts context
+with the checkpoint's own tokenizer, reads the written score's own length before
+any audio is generated, and then either raises the limit so the song can finish
+— reporting the change — or refuses before spending the GPU time. A run that
+does get cut off ends as `INCOMPLETE`, never `COMPLETED`. See
+[docs/parameter-guide.md](docs/parameter-guide.md#how-duration-really-works).
+
+**4. Progress is never invented.** Token stages report real counts and a rate,
 with no percentage, because a generation limit is a ceiling and not a target.
 Stages that do have a target — ODE solver steps, decoder chunks, transcription
 windows — report a real percentage.
 
-**4. Every setting explains itself.** All 46 parameters carry plain-language
+**5. Every setting explains itself.** All 46 parameters carry plain-language
 help served by the backend: what it is, what happens if you raise or lower it,
 what is recommended, what an extreme value does, and whether it costs time or
 memory. It appears behind an ⓘ beside the label — or a ⚠ for the seventeen

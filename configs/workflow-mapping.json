@@ -590,6 +590,20 @@
       "workflow_value": 360
     },
     {
+      "parameter": "sampling.fit_to_plan",
+      "label": "Let the song finish",
+      "kind": "app",
+      "native": {
+        "supported": true,
+        "path": null,
+        "note": "Applied by the studio between planning and audio generation; the runtime only ever sees one concrete token budget."
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
+    },
+    {
       "parameter": "sampling.max_tokens_override",
       "label": "Semantic max tokens (override)",
       "kind": "model",
@@ -778,6 +792,20 @@
       "comfy_widget": "filename_prefix",
       "comfy_note": null,
       "workflow_value": "audio/YuE2"
+    },
+    {
+      "parameter": "output.fade_out_incomplete_ms",
+      "label": "Fade an unfinished ending",
+      "kind": "post",
+      "native": {
+        "supported": true,
+        "path": null,
+        "note": "Post-processing applied by the studio and recorded in the manifest."
+      },
+      "comfy_node_type": null,
+      "comfy_widget": null,
+      "comfy_note": null,
+      "workflow_value": null
     },
     {
       "parameter": "output.keep_canonical",

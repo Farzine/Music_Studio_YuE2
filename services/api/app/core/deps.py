@@ -11,6 +11,7 @@ from yue2_studio_core.queue import FilesystemJobQueue
 from yue2_studio_core.settings import Settings, get_settings
 from yue2_studio_core.store import Store
 
+from app.services.budget import BudgetService
 from app.services.capabilities import CapabilityService
 from app.services.generations import GenerationService
 from app.services.system_info import SystemInfoService
@@ -33,6 +34,11 @@ def queue_provider() -> FilesystemJobQueue:
 
 
 @lru_cache(maxsize=1)
+def budget_provider() -> BudgetService:
+    return BudgetService(settings_provider())
+
+
+@lru_cache(maxsize=1)
 def capability_provider() -> CapabilityService:
     return CapabilityService(settings_provider())
 
@@ -48,5 +54,6 @@ def generation_service_provider() -> GenerationService:
         store=store_provider(),
         queue=queue_provider(),
         capabilities=capability_provider(),
+        budget=budget_provider(),
         settings=settings_provider(),
     )

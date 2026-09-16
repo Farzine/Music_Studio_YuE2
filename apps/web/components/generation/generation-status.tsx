@@ -43,6 +43,7 @@ export function GenerationStatus({
   const currentIndex = order.indexOf(job.status);
   const failed = job.status === "FAILED";
   const cancelled = job.status === "CANCELLED";
+  const incomplete = job.status === "INCOMPLETE";
 
   return (
     <div className={cn("rounded-[var(--radius-lg)] border border-[var(--color-line)] bg-[var(--color-surface)] p-5", className)}>
@@ -63,9 +64,9 @@ export function GenerationStatus({
       <ol className="space-y-2.5">
         {stages.map((stage) => {
           const stageIndex = order.indexOf(stage.status);
-          const done = currentIndex > stageIndex || job.status === "COMPLETED";
+          const done = currentIndex > stageIndex || job.status === "COMPLETED" || (incomplete && stage.status !== "COMPLETED");
           const active = job.status === stage.status;
-          const stopped = (failed || cancelled) && stageIndex >= currentIndex;
+          const stopped = (failed || cancelled || incomplete) && stageIndex >= currentIndex;
 
           return (
             <li key={stage.status} className="flex items-start gap-3">
@@ -91,7 +92,11 @@ export function GenerationStatus({
                         : "text-[var(--color-ink-faint)]",
                   )}
                 >
-                  {active && job.progress.label ? job.progress.label : stage.label}
+                  {active && job.progress.label
+                    ? job.progress.label
+                    : incomplete && stage.status === "COMPLETED"
+                      ? "Stopped at the token limit"
+                      : stage.label}
                 </p>
 
                 {active ? (

@@ -111,21 +111,54 @@ These shape the symbolic score written before any audio exists.
 | **Maximum duration** | 360 s | A ceiling, not a target. The model stops when the song is done. |
 | **Semantic max tokens** | — | Set the ceiling in tokens directly instead of deriving it from the duration. |
 
-### How duration works
+### How duration really works
 
-The decoder runs at 48000 Hz with a downsampling ratio of 1920, so there are
-exactly **25 latent frames per second**, and the acoustic stage emits one token
-per frame:
+This is the most misunderstood control in the application, so it is worth being
+precise.
+
+**The model is never told how long to make a song.** It writes what the style,
+lyrics and score imply, and emits an end token when that song is finished.
+Maximum duration is a **hard stop**, not a target. Set it below the song the
+model intended and generation is cut off part way through — which is what
+produced the old *"stopped at its token limit"* warning and an abruptly ending,
+sometimes clicking, file.
+
+The arithmetic is exact. The decoder runs at 48000 Hz with a downsampling ratio
+of 1920, so there are **25 latent frames per second**, and the acoustic stage
+emits one token per frame:
 
 ```text
 seconds = tokens / 25
 ```
 
 360 seconds is 9000 tokens — which is why the runtime default and the ComfyUI
-workflow's `max_duration = 360` are the same limit expressed two ways. Raising
-the ceiling does not make a song longer; it only stops a long one being cut off.
-If the model does hit the ceiling, the result is marked **truncated** and the
-warning says so.
+workflow's `max_duration = 360` are the same limit written two ways.
+
+Those tokens share one 24,576-token window with the instruction, the style, the
+lyrics and the score. The runtime refuses outright when they do not fit
+(`yue2.sampling.generate_tokens`: *"Prefix + requested generation budget exceeds
+24576; no implicit truncation"*), so the real ceiling is:
+
+```text
+available = 24576 − prefix − reserve − safety margin
+```
+
+In practice the prefix is small — 81 tokens for short lyrics, around 1,250 for
+long ones with a score — which leaves roughly **13 to 16 minutes** of audio. The
+context is almost never what limits a song. **The duration setting is.**
+
+So the studio checks twice:
+
+1. **Before queueing**, it counts the prefix with the checkpoint's own tokenizer
+   and refuses a request that cannot fit, naming the numbers.
+2. **After the score is written but before any audio**, it reads the score's own
+   tempo and bar count to find the length the model intends. Measured against
+   completed runs on this machine that prediction lands within a few percent.
+
+With **Let the song finish** on, a limit shorter than the planned song is raised
+so the song reaches its ending, and the change is reported on the result with
+the original value beside it. With it off, the run is refused before it starts
+rather than delivering a fragment.
 
 ---
 

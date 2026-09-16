@@ -19,10 +19,17 @@ LATENT_FRAME_RATE = SAMPLE_RATE // VAE_DOWNSAMPLING_RATIO  # 25 frames per secon
 PROTOCOL_VERSION = "yue2-native-v1"
 MANIFEST_SCHEMA_VERSION = 1
 
-# Protocol ceilings enforced by yue2.protocol.Sampling / GenerationConfig.
-MAX_SEMANTIC_TOKENS = 24000
-MAX_ABC_TOKENS = 16384
+# Protocol ceilings enforced by the runtime itself.
+#
+# CONTEXT_TOKENS is the model's max_position_embeddings, and
+# yue2.sampling.generate_tokens raises when prefix + max_tokens exceeds it:
+# "Prefix + requested generation budget exceeds 24576; no implicit truncation".
+# The real ceiling on a song is therefore CONTEXT_TOKENS minus the prefix, which
+# yue2_studio_core.budget computes per request. The field bound below is only
+# the absolute upper limit; it is never the usable budget.
 CONTEXT_TOKENS = 24576
+MAX_SEMANTIC_TOKENS = CONTEXT_TOKENS
+MAX_ABC_TOKENS = 16384
 # yue2.protocol.GenerationConfig rejects anything but midpoint at this context.
 FIXED_ODE_METHOD = "midpoint"
 # yue2.pipeline.decode always uses a 16-frame halo; it is not a parameter.

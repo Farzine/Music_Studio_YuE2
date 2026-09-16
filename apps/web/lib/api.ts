@@ -1,4 +1,5 @@
 import type {
+  BudgetResponse,
   Capabilities,
   DeleteReport,
   GenerationJob,
@@ -73,6 +74,11 @@ export const api = {
     ),
 
   schema: () => request<GenerationSchema>("/api/v1/generation/schema"),
+  estimateBudget: (config: Record<string, unknown>) =>
+    request<BudgetResponse>("/api/v1/generation/estimate", {
+      method: "POST",
+      body: JSON.stringify({ config }),
+    }),
   capabilities: () => request<Capabilities>("/api/v1/models/capabilities"),
   workflowMapping: () => request<Record<string, unknown>>("/api/v1/generation/workflow-mapping"),
 

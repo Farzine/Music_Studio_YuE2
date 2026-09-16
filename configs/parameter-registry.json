@@ -1019,6 +1019,34 @@
       }
     },
     {
+      "key": "sampling.fit_to_plan",
+      "label": "Let the song finish",
+      "group": "generation",
+      "type": "bool",
+      "default": true,
+      "kind": "app",
+      "advanced": false,
+      "help": "If the written score is longer than the duration limit, raise the limit so the song reaches its ending instead of stopping part way. The change is always shown on the result.",
+      "native": {
+        "supported": true,
+        "path": null,
+        "note": "Applied by the studio between planning and audio generation; the runtime only ever sees one concrete token budget."
+      },
+      "comfy": {
+        "node": null,
+        "widget": null
+      },
+      "guidance": {
+        "severity": "info",
+        "what": "The model is never told how long to make a song: it writes what the style, lyrics and score imply, then stops. The duration limit is a hard cut, not a target, so a limit shorter than the song truncates it. With this on, the limit is raised to fit the song the model actually planned.",
+        "more": "On, a song that would have been cut off instead plays through to its ending. The change is always reported on the result, never made quietly.",
+        "less": "Off, the duration limit is respected exactly, and a song that needs more is refused before generating rather than delivered half-finished.",
+        "recommended": "On. Raising the limit cannot make a song longer than the model intended, only stop it being cut short.",
+        "extremes": "A song too long for the model's context window is refused either way; this runtime generates in one pass and cannot continue across segments.",
+        "cost": "A larger budget reserves a proportionally larger key/value cache, roughly 0.11 MB per second of headroom."
+      }
+    },
+    {
       "key": "sampling.max_tokens_override",
       "label": "Semantic max tokens (override)",
       "group": "generation",
@@ -1472,6 +1500,38 @@
         "what": "The start of the filename when you download a song. Files on disk are named from internal ids and are unaffected.",
         "recommended": "Anything recognisable, such as a project name.",
         "cost": "None."
+      }
+    },
+    {
+      "key": "output.fade_out_incomplete_ms",
+      "label": "Fade an unfinished ending",
+      "group": "output",
+      "type": "int",
+      "default": 250,
+      "min": 0,
+      "max": 5000,
+      "step": 50,
+      "unit": "ms",
+      "kind": "post",
+      "advanced": true,
+      "help": "Length of the fade applied only when a take was cut off at its token limit, so the cut does not click. Never applied to a song that reached its own ending.",
+      "native": {
+        "supported": true,
+        "path": null,
+        "note": "Post-processing applied by the studio and recorded in the manifest."
+      },
+      "comfy": {
+        "node": null,
+        "widget": null
+      },
+      "guidance": {
+        "severity": "info",
+        "what": "A short fade applied only when a take was cut off before the song ended. A hard cut lands on an arbitrary point in the waveform and clicks; the fade removes that without pretending the song finished.",
+        "more": "A longer fade hides the cut more gently but trims more of the audio that was generated.",
+        "less": "Zero leaves the raw cut, clicks included.",
+        "recommended": "250 ms.",
+        "extremes": "It is never applied to a song that reached its own ending, and it is always recorded in the manifest.",
+        "cost": "None worth measuring."
       }
     },
     {

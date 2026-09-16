@@ -250,3 +250,57 @@ def test_gpu_inventory_and_selection(api_client):
     # An index the machine does not have is refused rather than stored.
     assert api_client.put("/api/v1/system/device", json={"device_index": 31}).status_code in {200, 422}
     assert api_client.put("/api/v1/system/device", json={"device_index": -1}).status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Token budgeting
+# --------------------------------------------------------------------------- #
+
+
+def test_estimate_endpoint_reports_the_budget_and_its_source(api_client, sample_config):
+    response = api_client.post("/api/v1/generation/estimate", json={"config": sample_config})
+    assert response.status_code == 200
+    body = response.json()
+    estimate, limits = body["estimate"], body["limits"]
+
+    assert estimate["risk"] in {"SAFE", "WARNING", "UNSAFE"}
+    assert estimate["input_context_tokens"] > 0
+    assert estimate["available_generation_tokens"] > 0
+    assert estimate["requested_tokens"] == 500  # 20 s at 25 tokens per second
+    assert estimate["max_safe_seconds"] > 0
+    assert set(estimate["prefix_breakdown"]) == {"document", "instruction_style_lyrics", "markers", "score"}
+    # The limits say where each number came from rather than asserting it.
+    assert limits["context_tokens"] > 0
+    assert limits["sources"]
+
+
+def test_an_over_budget_request_is_refused_before_it_is_queued(api_client, sample_config):
+    config = json.loads(json.dumps(sample_config))
+    config["sampling"]["max_duration_seconds"] = 960  # 24,000 tokens, past the window
+    response = api_client.post("/api/v1/generations", json={"config": config})
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error_code"] == "TOKEN_BUDGET_EXCEEDED"
+    # The refusal carries the numbers, not just a complaint.
+    budget = body["details"]["budget"]
+    assert budget["requested_tokens"] > budget["available_generation_tokens"]
+    assert budget["excess_tokens"] > 0
+    assert budget["max_safe_seconds"] > 0
+
+
+def test_long_lyrics_shrink_the_available_budget(api_client, sample_config):
+    short = api_client.post("/api/v1/generation/estimate", json={"config": sample_config}).json()
+    config = json.loads(json.dumps(sample_config))
+    config["prompt"]["lyrics"] = config["prompt"]["lyrics"] * 60
+    long = api_client.post("/api/v1/generation/estimate", json={"config": config}).json()
+
+    assert long["estimate"]["input_context_tokens"] > short["estimate"]["input_context_tokens"]
+    assert long["estimate"]["available_generation_tokens"] < short["estimate"]["available_generation_tokens"]
+    assert any("lyrics" in reason for reason in long["estimate"]["reasons"])
+
+
+def test_a_queued_generation_records_its_request_budget(api_client, sample_config):
+    created = api_client.post("/api/v1/generations", json={"config": sample_config}).json()
+    budget = created["generation"]["budget"]
+    assert budget and "request" in budget
+    assert budget["request"]["requested_tokens"] == 500

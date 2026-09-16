@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "description": "Model-specific generation limits. Values marked dynamic are read from the model files at runtime and take precedence over the declared defaults; the declared values are the fallback when the files are not readable.",
+  "defaults": {
+    "reserved_tokens": 8,
+    "safety_margin_tokens": 256,
+    "warning_threshold": 0.85,
+    "plan_length_tolerance": 1.15
+  },
+  "models": {
+    "yue2": {
+      "model_id": "m-a-p/YuE2-3B",
+      "protocol": "yue2-native-v1",
+      "context_tokens": 24576,
+      "context_tokens_source": {
+        "dynamic": true,
+        "file": "config.json",
+        "key": "max_position_embeddings",
+        "note": "The autoregressive stage refuses prefix + budget beyond this; yue2.sampling.generate_tokens raises rather than truncating."
+      },
+      "latent_frame_rate": 25,
+      "latent_frame_rate_source": {
+        "dynamic": true,
+        "file": "vae/config.json",
+        "expression": "sample_rate / downsampling_ratio",
+        "note": "48000 / 1920 = 25 codec tokens per second of audio, one token per latent frame."
+      },
+      "reserved_tokens": 8,
+      "safety_margin_tokens": 256,
+      "supports_continuation": false,
+      "supports_chunked_generation": false,
+      "capability_note": "yue2-infer 0.1.6 exposes plan/generate_semantic/synthesize/decode and no continuation, resume or audio-prefix entry point. A song is produced in one autoregressive pass, so the context window is a hard ceiling on its length and cannot be extended by chunking."
+    }
+  }
+}

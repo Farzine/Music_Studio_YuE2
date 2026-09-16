@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { AudioUploader, type UploadedAudio } from "@/components/audio/audio-uploader";
+import { BudgetPanel } from "@/components/generation/budget-panel";
 import { ModeSelector } from "@/components/generation/mode-selector";
 import { AdvancedSettings } from "@/components/settings/advanced-settings";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,7 @@ import { ErrorNotice, Skeleton, WarningNotice } from "@/components/ui/feedback";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { Slider } from "@/components/ui/controls";
 import { PresetPicker } from "@/features/create/preset-picker";
+import { useBudgetEstimate } from "@/hooks/use-budget";
 import { useCapabilities, useGenerationActions, usePresets, useSchema } from "@/hooks/use-queries";
 import { ApiRequestError, api } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -51,6 +53,13 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
   const decoderMode = (getPath(effective, "decoder.mode") as string) ?? "tiled";
   const budget = (getPath(effective, "model.memory_budget_gib") as number) ?? 40;
   const cover = capabilities?.capabilities?.cover;
+
+  // Live token budget for exactly what would be submitted. The backend counts
+  // with the checkpoint's own tokenizer, so the figures are the model's, not a
+  // frontend approximation.
+  const { data: tokenBudget } = useBudgetEstimate(effective, Boolean(defaults));
+  const estimate = tokenBudget?.estimate;
+  const overBudget = estimate?.risk === "UNSAFE";
 
   const update = (path: string, value: unknown) => {
     setConfig((current) => setPath(current, path, value));
@@ -91,7 +100,8 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
   const canSubmit =
     style.trim().length > 0 &&
     (!needsLyrics || lyrics.trim().length > 0) &&
-    (!needsReference || Boolean(reference));
+    (!needsReference || Boolean(reference)) &&
+    !overBudget;
 
   const blocker = !style.trim()
     ? "Describe a style to get started."
@@ -99,7 +109,9 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
       ? "Add lyrics, or switch to Direct Audio."
       : needsReference && !reference
         ? "Upload the recording you want to cover."
-        : null;
+        : overBudget
+          ? "This request does not fit the model's context window. Adjust it above."
+          : null;
 
   const submit = async () => {
     setError(null);
@@ -240,7 +252,11 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
               label="Maximum duration"
               guidance={parameter("sampling.max_duration_seconds")?.guidance}
               value={formatDuration(duration)}
-              description={`${Math.round(duration * 25).toLocaleString()} acoustic tokens at 25 per second. The model stops when the song is finished.`}
+              description={
+                `${Math.round(duration * 25).toLocaleString()} acoustic tokens at 25 per second. ` +
+                "The model decides how long the song is, so this is a hard stop rather than a target — " +
+                "with “Let the song finish” on, it is raised if the planned song needs more."
+              }
             >
               <Slider
                 value={[duration]}
@@ -288,6 +304,14 @@ export function CreateForm({ initialConfig }: { initialConfig?: ConfigObject }) 
               </div>
             </Field>
           </div>
+
+          {estimate ? (
+            <BudgetPanel
+              estimate={estimate}
+              limits={tokenBudget?.limits}
+              onAdjust={(seconds) => update("sampling.max_duration_seconds", seconds)}
+            />
+          ) : null}
 
           {vramWarning ? <WarningNotice>{vramWarning}</WarningNotice> : null}
           {error ? (
