@@ -28,9 +28,9 @@ Codes come from `ErrorCode`; see [troubleshooting.md](troubleshooting.md).
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/api/v1/health` | Liveness, and whether the model and worker are ready. |
-| `GET` | `/api/v1/system/info` | GPUs (NVML), disk, queue, worker heartbeat, runtime versions. |
+| `GET` | `/api/v1/system/info` | Physical GPUs (NVML), CPU/RAM, disk, queue, worker heartbeat and runtime versions. |
 | `GET` | `/api/v1/system/vram-estimate` | `?seconds=&decoder_mode=&budget_gib=` — returns a warning or `null`. An estimate, clearly labelled as one; it never changes the request. |
-| `GET` | `/api/v1/system/gpus` | Selectable GPUs, which one is chosen, and which one the worker is using right now. |
+| `GET` | `/api/v1/system/gpus` | Worker CUDA GPUs with runtime/precision/residency facts; informational physical cards when offline. Check `selectable`. |
 | `PUT` | `/api/v1/system/device` | `{"device_index": 1}` — choose the GPU. Applies to the next job; a run in flight finishes where it started. |
 
 ### Choosing a GPU
@@ -38,8 +38,14 @@ Codes come from `ErrorCode`; see [troubleshooting.md](troubleshooting.md).
 The device list comes from the worker, not from the API's own NVML query,
 because `CUDA_VISIBLE_DEVICES` can hide cards from the worker that NVML still
 sees — offering an index the worker cannot address would not be a real choice.
-When that variable is set, live utilisation is not merged into the list rather
-than being attributed to the wrong card, and `note` explains why.
+Worker logical indices are matched to NVML physical cards by UUID, including
+hidden/reordered devices. No matching UUID means no live NVML merge; memory
+then comes from the worker heartbeat. Names and indices never establish identity.
+`cuda_visible_devices` reports the worker's actual environment, not API settings.
+When the worker is offline, physical cards are informational (`selectable=false`,
+`cuda_available=null`). Selecting a device requires a worker-confirmed CUDA index;
+unavailable choices return 422. An online worker reporting no CUDA cards yields
+an empty list even if NVML sees physical cards.
 
 ```jsonc
 {
@@ -48,6 +54,8 @@ than being attributed to the wrong card, and `note` explains why.
   "pending_restart": true,      // the model reloads on the next job
   "devices": [
     { "index": 0, "name": "NVIDIA RTX A6000", "memory_free_bytes": 13207764992,
+      "uuid": "GPU-example", "physical_index": 1, "selectable": true,
+      "cuda_available": true, "cuda_runtime": "12.6", "memory_source": "nvml",
       "other_process_count": 1, "other_process_bytes": 37346082816, "selected": false }
   ]
 }
@@ -55,6 +63,37 @@ than being attributed to the wrong card, and `note` explains why.
 
 The choice is stored in `data/runtime-settings.json`, so it survives a restart
 and does not require editing `.env`.
+
+### Hardware facts and uncertainty
+
+`system/info.memory` contains `cpu_name`, `logical_cpu_count`, `total_bytes`,
+`available_bytes`, `used_bytes` and `source`. Linux uses `/proc/meminfo`
+`MemAvailable` (including reclaimable cache). Other hosts use total RAM from
+`sysconf` when available; unknown available/used memory stays null. These are
+host facts, not enforced container memory limits. Disk statistics still refer
+to `DATA_DIR`; download destination storage checks are a separate workflow.
+
+Device facts include UUID, physical index, PCI address, driver, CUDA availability
+and runtime, compute capability, FP16/BF16/FP8 eligibility and `precision_source`.
+Precision derived from compute capability is not a successful kernel or model
+load test. The worker checks native BF16 through PyTorch in each device's own
+context without emulation. FP8 eligibility uses the installed YuE2 runtime's
+minimum capability. Unknown readings remain null, including process memory
+when NVML cannot report it. Unsupported sensors do not discard other facts.
+
+`loaded_model` is attributed only to the device reported by an online worker's
+model manager. `allocated_bytes` / `reserved_bytes` describe the worker's
+PyTorch allocator, **not** exact model-only VRAM or audio.cpp subprocess memory.
+`memory_source` and `stats_updated_at` distinguish live NVML memory from heartbeat
+readings. Worker heartbeats older than 30 seconds, stopped/failed workers,
+malformed timestamps and known dead local PIDs are offline. Remote/legacy PIDs
+are not checked against the API host. Old heartbeats lacking UUID cannot be
+merged safely; restart the worker once to get the new facts.
+
+The existing recommendation endpoint remains a limited published YuE2 benchmark
+estimate. General model capacity, configurable reserves and metadata-aware
+recommendations are pending. Memory warnings use the selected worker device,
+and return unknown when that device or its free memory is unconfirmed.
 
 ## Models, capabilities and schema
 

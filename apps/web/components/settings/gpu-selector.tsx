@@ -11,7 +11,7 @@ import { formatBytes } from "@/lib/format";
 import type { GpuDevice } from "@/types/api";
 
 function Meter({ device }: { device: GpuDevice }) {
-  const used = device.memory_total_bytes ? device.memory_used_bytes / device.memory_total_bytes : 0;
+  const used = device.memory_total_bytes && device.memory_used_bytes != null ? device.memory_used_bytes / device.memory_total_bytes : 0;
   const tone = used > 0.85 ? "bg-[var(--color-danger)]" : used > 0.6 ? "bg-[var(--color-warn)]" : "bg-[var(--color-accent)]";
   return (
     <div className="space-y-1">
@@ -19,7 +19,7 @@ function Meter({ device }: { device: GpuDevice }) {
         <div className={cn("h-full rounded-full transition-[width]", tone)} style={{ width: `${used * 100}%` }} />
       </div>
       <p className="text-[11px] tabular-nums text-[var(--color-ink-faint)]">
-        {formatBytes(device.memory_free_bytes)} free of {formatBytes(device.memory_total_bytes)}
+        {formatBytes(device.memory_free_bytes)} free · {formatBytes(device.memory_used_bytes)} used · {formatBytes(device.memory_total_bytes)} total
       </p>
     </div>
   );
@@ -40,7 +40,7 @@ export function GpuSelector() {
   if (isLoading) return <Skeleton className="h-40 w-full" />;
   if (!data) return null;
 
-  if (data.error || data.devices.length === 0) {
+  if (data.devices.length === 0) {
     return (
       <ErrorNotice
         title="No GPU detected"
@@ -52,6 +52,7 @@ export function GpuSelector() {
 
   return (
     <div className="space-y-3">
+      {data.error ? <WarningNotice>{data.error}</WarningNotice> : null}
       {data.note ? <WarningNotice>{data.note}</WarningNotice> : null}
       {data.pending_restart ? (
         <WarningNotice>
@@ -66,16 +67,16 @@ export function GpuSelector() {
         className="grid gap-3 md:grid-cols-2"
       >
         {data.devices.map((device) => {
-          const selected = device.index === data.selected_index;
+          const selected = device.selected;
           const active = device.index === data.active_index;
-          const busy = device.other_process_count > 0;
+          const busy = device.other_process_count != null && device.other_process_count > 0;
           return (
             <button
               key={device.index}
               type="button"
               role="radio"
               aria-checked={selected}
-              disabled={select.isPending}
+              disabled={select.isPending || !device.selectable}
               onClick={() => select.mutate(device.index)}
               className={cn(
                 "flex flex-col gap-3 rounded-[var(--radius-md)] border p-4 text-left transition-[border-color,background-color]",
@@ -95,10 +96,10 @@ export function GpuSelector() {
                   />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">
-                      GPU {device.index} · {device.name}
+                      {device.selectable ? "CUDA GPU" : "Physical GPU"} {device.index} · {device.name ?? "Unknown"}
                     </p>
                     <p className="text-[11px] text-[var(--color-ink-faint)]">
-                      compute {device.compute_capability}
+                      compute {device.compute_capability ?? "unknown"}
                       {device.bf16_supported === false ? " · no bf16" : ""}
                     </p>
                   </div>
@@ -112,6 +113,15 @@ export function GpuSelector() {
               </div>
 
               <Meter device={device} />
+              {device.error ? <span className="text-xs text-[var(--color-danger)]">{device.error}</span> : null}
+              <dl className="space-y-1 break-all text-xs text-[var(--color-ink-muted)]">
+                <div><dt className="inline">CUDA: </dt><dd className="inline">{device.cuda_available == null ? "unconfirmed" : device.cuda_available ? "available" : "unavailable"} · runtime {device.cuda_runtime ?? "unknown"}</dd></div>
+                <div><dt className="inline">Driver: </dt><dd className="inline">{device.driver_version ?? "unknown"}</dd></div>
+                <div><dt className="inline">Identity: </dt><dd className="inline">{device.uuid ?? "unknown"}{device.physical_index != null ? ` · physical GPU ${device.physical_index}` : ""}</dd></div>
+                <div><dt className="inline">Loaded model: </dt><dd className="inline">{device.loaded_model ?? (data.worker_online ? "none reported" : "unknown (worker offline)")}</dd></div>
+                <div><dt className="inline">Worker allocator: </dt><dd className="inline">{formatBytes(device.allocated_bytes)} allocated · {formatBytes(device.reserved_bytes)} reserved</dd></div>
+                <div><dt className="inline">Facts: </dt><dd className="inline">{device.memory_source === "nvml" ? "live NVML memory" : "worker heartbeat memory"}; precision from {device.precision_source.replaceAll("_", " ")}. Eligibility is not an inference test.</dd></div>
+              </dl>
 
               <div className="flex flex-wrap items-center gap-1.5">
                 {device.utilisation_percent != null ? (
@@ -121,13 +131,15 @@ export function GpuSelector() {
                 {busy ? (
                   <Badge tone="warn">
                     <TriangleAlert className="h-3 w-3" />
-                    {device.other_process_count} other process{device.other_process_count > 1 ? "es" : ""} ·{" "}
+                    {device.other_process_count} other process{(device.other_process_count ?? 0) > 1 ? "es" : ""} ·{" "}
                     {formatBytes(device.other_process_bytes)}
                   </Badge>
                 ) : (
-                  <Badge tone="outline">free</Badge>
+                  <Badge tone="outline">{device.other_process_count == null ? "process usage unknown" : "no other compute processes"}</Badge>
                 )}
-                {device.bf16_supported === false ? <Badge tone="danger">bf16 unsupported</Badge> : null}
+                {(["fp16", "bf16", "fp8"] as const).map((precision) => (
+                  <Badge key={precision} tone="outline">{precision.toUpperCase()} {device[`${precision}_supported`] == null ? "unknown" : device[`${precision}_supported`] ? "eligible" : "unsupported"}</Badge>
+                ))}
               </div>
             </button>
           );

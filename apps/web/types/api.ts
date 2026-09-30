@@ -302,16 +302,32 @@ export interface Capabilities {
 
 export interface GpuDevice {
   index: number;
-  name: string;
-  memory_total_bytes: number;
-  memory_used_bytes: number;
-  memory_free_bytes: number;
+  error?: string | null;
+  name: string | null;
+  uuid: string | null;
+  physical_index: number | null;
+  pci_bus_id: string | null;
+  driver_version: string | null;
+  cuda_available: boolean | null;
+  cuda_runtime: string | null;
+  memory_total_bytes: number | null;
+  memory_used_bytes: number | null;
+  memory_free_bytes: number | null;
   compute_capability: string | null;
   bf16_supported: boolean | null;
+  fp16_supported: boolean | null;
+  fp8_supported: boolean | null;
+  precision_source: string;
+  memory_source: "nvml" | "worker_heartbeat";
+  allocated_bytes: number | null;
+  reserved_bytes: number | null;
+  loaded_model: string | null;
+  selectable: boolean;
+  stats_updated_at: string | null;
   utilisation_percent: number | null;
   temperature_c: number | null;
-  other_process_count: number;
-  other_process_bytes: number;
+  other_process_count: number | null;
+  other_process_bytes: number | null;
   selected: boolean;
   reported_by: "worker" | "nvml";
   live_stats?: boolean;
@@ -323,6 +339,7 @@ export interface GpuInventory {
   active_index: number | null;
   pending_restart: boolean;
   worker_online: boolean;
+  cuda_available: boolean | null;
   driver_version: string | null;
   error: string | null;
   cuda_visible_devices: string | null;
@@ -444,18 +461,17 @@ export interface QueueView {
 
 export interface SystemInfo {
   app: Record<string, unknown>;
-  gpus: {
-    index: number;
-    name: string;
-    memory_total_bytes: number;
-    memory_used_bytes: number;
-    memory_free_bytes: number;
-    compute_capability: string;
-    utilisation_percent: number | null;
-    temperature_c: number | null;
-  }[];
+  gpus: Partial<GpuDevice>[];
   driver_version: string | null;
   gpu_error: string | null;
+  memory: {
+    cpu_name: string | null;
+    logical_cpu_count: number | null;
+    total_bytes: number | null;
+    available_bytes: number | null;
+    used_bytes: number | null;
+    source: string;
+  };
   disk: { total_bytes: number; used_bytes: number; free_bytes: number; path: string };
   queue: { depth: number; active: unknown[]; by_status: Record<string, number>; total_generations: number };
   worker: { workers: WorkerHeartbeat[]; online: boolean };

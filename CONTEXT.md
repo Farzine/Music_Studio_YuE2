@@ -4,16 +4,52 @@ Updated: 2026-09-30. Analysis baseline: `2af5461` (`feat: Implement model downlo
 
 ## Current task and handoff
 
-**Phases 1 and 2A–2C are complete.** Shared installation metadata and registry import existing models without moving weights. Inspect/structural-validation/checksum/confirmed-deletion APIs now protect tasks, resident files and shared storage, while preserving legacy paths and default/VAE choices. Phases 3–9 remain pending; the full enhancement definition of done has not been achieved.
+**Phases 1, 2A–2C and 3A are complete.** Shared installation metadata and registry import existing models without moving weights. Inspect/structural-validation/checksum/confirmed-deletion APIs now protect tasks, resident files and shared storage, while preserving legacy paths and default/VAE choices. Phase 3B and Phases 4–9 remain pending; the full enhancement definition of done has not been achieved.
 
 On `Continue from CONTEXT.md`:
 
 1. Check the current diff and preserve any subsequent user changes. Reuse this map; read the files for the next slice and their callers before editing.
-2. Start Phase 3A: hardware facts. Extend worker heartbeat probes and SystemInfoService with CPU RAM, runtime/driver/precision facts and stable GPU identity; fix selected-device capability checks and stopped-worker detection. Read these modules and their consumers before editing.
+2. Start Phase 3B: capacity and recommendations. Read existing system_info benchmark projection, shared descriptors/config metadata, budget/KV helpers, settings and UI consumers. Implement explainable estimates with configurable reserves, backend/VAE/offload compatibility and honest unknown states; preserve the existing recommendation endpoint contract where practical.
 3. Complete one slice, run its relevant checks, and update this document with files changed, results, and remaining work before starting the next slice.
 4. Keep the API free of PyTorch/CUDA model loading. Runtime operations belong to the worker and its existing manager/adapters.
 
-No user decision currently blocks Phase 3A. Current implementation and validation limits follow; earlier phase findings are historical snapshots where explicitly marked.
+No user decision currently blocks Phase 3B. Current implementation and validation limits follow; earlier phase findings are historical snapshots where explicitly marked.
+
+## Phase 3A implementation
+
+- Added shared core `hardware.py` for host CPU/RAM facts and native arithmetic eligibility. Linux MemAvailable includes reclaimable cache; total-RAM fallback uses stdlib sysconf and leaves available/used RAM unknown. No new dependencies or torch import in the API/core.
+- NVML scan now returns UUID/PCI identity, per-device driver, nullable memory/precision/utilization/process facts. Unsupported sensors or unavailable device handles preserve other devices/facts. Unknown process memory is not fabricated as zero.
+- Worker snapshots report actual CUDA_VISIBLE_DEVICES, UUID, per-device allocated/reserved bytes and precision provenance. Native BF16 is checked with `torch.cuda.is_bf16_supported(including_emulation=False)` inside each device context; older runtimes retain labelled hardware eligibility. Invalid selected indices and partial device-probe failures are observable without losing healthy GPUs.
+- SystemInfoService merges logical worker GPUs with physical cards only by UUID, never matching names/indices. Live matched NVML memory supersedes older heartbeat memory; `memory_source`/timestamps distinguish the sources. API settings no longer stand in for the worker's visibility mask. Unknown identity suppresses unsafe merging.
+- Fresh stopped/failed, expired/future/malformed heartbeat records and known dead same-host PIDs are offline. New heartbeats identify hostname; legacy/remote workers use heartbeat freshness because API cannot prove their process liveness. Malformed non-object hardware/runtime/model records are skipped.
+- An online worker's view is authoritative even when it reports zero CUDA devices. Offline physical cards are informational/nonselectable and CUDA availability is unknown. `/system/device` rejects unconfirmed CUDA indices, including empty inventories. Existing frozen runtime choice is preserved until a valid selection succeeds.
+- FP8 capability and VRAM warnings use the selected worker CUDA index, not physical GPU 0. Manager-reported resident device takes precedence over changed idle selection for heartbeat placement. `loaded_model` uses online manager state; allocator counters are explicitly not exact model-only memory or audio.cpp subprocess usage.
+- Existing System/GPU UI displays CPU/RAM and per-GPU runtime, driver, identity, precision, residency and allocator facts. Offline stale model state is not shown as currently loaded. Benchmark recommendation labels now say estimated fit/headroom instead of verified/runnable.
+- General model capacity, reserves and recommendation rules were not implemented in this facts slice. Existing benchmark logic remains a backwards-compatible limited estimate; unknown selected/free memory yields no recommendation. Storage still reports DATA_DIR's disk, not a future selected download destination.
+
+### Phase 3A changed files
+
+```text
+packages/core/yue2_studio_core/hardware.py (new)
+services/api/app/services/{system_info,capabilities}.py
+services/api/app/api/v1/system.py
+services/yue2_worker/worker.py
+apps/web/{types/api.ts,app/system/page.tsx,components/settings/gpu-selector.tsx}
+tests/unit/test_hardware.py (new)
+tests/integration/test_hardware_api.py (new)
+tests/integration/test_api_flow.py
+README.md; docs/api.md; CONTEXT.md
+```
+
+### Phase 3A validation and remaining limits
+
+- Full integration suite: **87 passed**, one unchanged Starlette/AnyIO deprecation warning. Final hardware/selection API recheck after last changes: **4 passed**. Outside sandbox due to documented TestClient stall; temporary files/mock inference only.
+- Final hardware/download/readiness unit check: **34 passed**, including reordered identical GPUs, selected precision, unknown identity/memory, stopped/dead/malformed workers, RAM fallback, partial NVML/worker probes and no-GPU paths. Worker model-manager environment: **9 passed**.
+- Full unit run before the final additional malformed-worker case: **161 passed, 2 skipped, 1 unchanged failure** (`yue2_full.json` missing). Added case passed in the focused recheck. Do not fabricate the missing reference workflow.
+- TypeScript, ESLint and production Next build: **passed**. Diff whitespace check: **passed**. No real GPU inference, worker restart, new dependency, downloads/deletion or production state migration performed.
+- RAM reports host memory, not cgroup constraints. UUID-less legacy workers cannot merge live statistics until restarted; no index/name guess is made. BF16 query is runtime eligibility without emulated allocation; FP16 and FP8 are hardware/runtime thresholds, not tested kernels/model loading. NVIDIA primary documentation linked in README; installed PyTorch and YuE2 source inspected for version-specific behavior.
+- Worker/manager is still only partially lifecycle-aware; GGUF CLI residency, explicit load/unload commands, coordinated switching/rollback and shutdown hardening are Phase 5. Per-task GPU control, separate dedicated Model/VAE dropdowns and keyboard/browser coverage remain Phase 6/7.
+- Next: Phase 3B. No information is currently required from the user.
 
 ## Phase 2C implementation
 
@@ -357,7 +393,7 @@ Each slice includes focused tests and a CONTEXT update. Phases 7–9 consolidate
 | **2A — States and readiness (done)** | Shared model metadata/status types in core; capabilities, parameters, generation validation, API types and status UI extended. Legacy responses retained; option annotation/default resolution fixed centrally. | Complete files remain downloaded when runtime unavailable; API/UI share the precise blocker; unavailable options stay disabled; default/explicit configs resolve consistently. |
 | **2B — Registry and migration (done)** | Shared filesystem registry/facts using Store; inventory delegates to it. Import configured paths and `studio-model.json`, recording nullable metadata/provenance. | Multiple native/GGUF variants and VAE entries have stable identity and preserved path aliases; re-import is idempotent; no weight movement/redownload; exact parameter counts are not guessed. |
 | **2C — Validation and deletion (done)** | Shared structural format/architecture/sidecar/VAE checks; focused API registry actions in existing model routes; job-reference checks/file leases/deletion journal. | Corrupt/unsupported/incomplete states are distinct; delete refuses active references and updates registry safely; shared/external files and failed cleanup handled; Inspect/Validate APIs tested. |
-| **3A — Hardware facts** | Extend worker heartbeat probes, `system_info.py`, core settings and API types. Add system RAM and stable GPU identity; fix stopped-worker detection and selected-device precision checks. | GPU/RAM/storage facts and runtime availability have clear provenance; mock/no-GPU paths work; logical indices map correctly under hidden/reordered GPUs. |
+| **3A — Hardware facts (done)** | Extend worker heartbeat probes, `system_info.py`, shared hardware facts and API types. Add system RAM and stable GPU identity; fix stopped-worker detection and selected-device precision checks. | GPU/RAM/storage facts and runtime availability have clear provenance; mock/no-GPU paths work; logical indices map correctly under hidden/reordered GPUs. |
 | **3B — Capacity and recommendations** | A backend estimation/recommendation service reusing shared model descriptors and KV cache logic; existing recommendation routes become compatible projections. Configurable reserves. | Every GPU has capacity estimates; installed/candidate rankings deterministic with explanations, backend/VAE/offload checks and unknown states; boundary/missing-data tests pass. |
 | **4A — HF inspection/discovery** | Extend `model_downloads.py` through a focused HF helper, current routes and descriptors. Repo/card/config/files metadata, refs, immutable commit, exact-file/multi-file/repository selection, related quantized candidate discovery. | Existing single-file request still works; invalid/private/missing repo/revision/file cases actionable; previews use the actual destination disk and compatibility assessment. |
 | **4B — Atomic downloads and measured progress** | Extend download job domain and manager, shared locks/staging, pinned HF transfer instrumentation, verification/registration and recovery. Keep current polling API. | Queued → Downloading → Verifying → Registering → complete/readiness result; measured per-file/overall bytes/rate/ETA; unknown totals honest; checksum/size failures never register valid models; interrupted/resumed/cached downloads tested. |
@@ -395,7 +431,7 @@ Production build and real GPU/HF download smoke tests were not run in this analy
 - Full-repository downloading must handle shards, optional assets, sizes that HF does not disclose, storage/caching overhead and authenticated HF errors while keeping tokens out of persisted/UI data.
 - Physical GPU switching/release/rollback needs a suitable machine and idle testing window later; mocked lifecycle checks cannot prove CUDA residency release.
 - Server file browsing will target the API host. If a desktop-native picker becomes a requirement, establish the supported launcher/platform explicitly before adding OS GUI integration.
-- No missing information currently blocks Phase 3A. Ask for user input only if a concrete future decision cannot be resolved from existing configuration or requirements.
+- No missing information currently blocks Phase 3B. Ask for user input only if a concrete future decision cannot be resolved from existing configuration or requirements.
 
 ## Reference verification
 
@@ -409,3 +445,5 @@ The HF card lists GGUF variants, F16/F32 VAEs and sidecars and attributes its me
 - **Phase 2A:** implemented shared preflight descriptors, readiness/selector fixes, consistent default dispatch, precise status UI and focused regression tests/documentation. Next: Phase 2B registry persistence and migration.
 - **Phase 2B:** added persistent installation facts, idempotent legacy import, stable identities/path aliases, completed-download registration, live readiness and explicit registry recovery. Tests/docs updated. Next: Phase 2C content/structural validation and safe deletion.
 - **Phase 2C:** added structural/checksum validation, inspection/confirmed deletion APIs, recovery journals, file leases and serialized admission, shared architecture/VAE checks and expanded offline tests/docs. Next: Phase 3A hardware facts.
+
+- **Phase 3A:** shared CPU/RAM/precision facts, UUID GPU merging, nullable sensors, authoritative worker CUDA selection, stopped-worker detection, selected-device capability/VRAM checks and System UI/docs/tests completed. Next: Phase 3B capacity and recommendations.

@@ -568,6 +568,20 @@ processes are holding, and lets you pick which one loads the model. The choice i
 stored in `data/runtime-settings.json` and applies to the next generation; a run
 already in flight finishes on the card it started on.
 
+Start the worker before selecting a card: its CUDA indices can differ from
+physical GPU indices. UUID matching keeps live statistics attached to the right
+card even with reordered/hidden GPUs. Offline cards are informational. The System
+page also shows CPU/RAM, driver/CUDA versions, precision eligibility, reported
+model residency and worker allocator usage. Unknown facts remain unknown;
+allocator memory is not exact model-only VRAM. Old workers need one restart to
+report UUIDs and these additional fields.
+
+Precision eligibility is based on hardware and the worker runtime, not a promise
+that a model will run. See NVIDIA's [FP16 arithmetic guidance](https://developer.nvidia.com/blog/mixed-precision-programming-cuda-8/)
+and [compute capability reference](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html).
+General capacity and model recommendations are still being implemented; current
+YuE2 recommendations use a limited published benchmark.
+
 `CUDA_VISIBLE_DEVICES` in `.env` does **not** control this, and never did — that
 file is read into the application's settings, not exported into the worker's
 process environment. Use the System page, or export the variable in the shell

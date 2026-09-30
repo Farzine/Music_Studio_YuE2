@@ -49,7 +49,9 @@ def select_device(
     finishes on the device it started on.
     """
     available = system.devices()
-    indices = {device["index"] for device in available["devices"]}
+    indices = {device["index"] for device in available["devices"] if device.get("selectable", True)}
+    if not indices:
+        raise ValidationError("Start the GPU worker before selecting a device; physical GPU indices may differ from CUDA indices.")
     if indices and payload.device_index not in indices:
         raise ValidationError(
             f"GPU {payload.device_index} is not available. Present: {sorted(indices)}.",

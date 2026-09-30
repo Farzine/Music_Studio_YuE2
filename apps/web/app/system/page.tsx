@@ -37,9 +37,9 @@ export default function SystemPage() {
     );
   }
 
-  const worker = data.worker.workers[0];
+  const worker = data.worker.workers.find((entry) => entry.online) ?? data.worker.workers[0];
   const runtime = (worker?.runtime ?? {}) as Record<string, string>;
-  const model = (worker?.model ?? {}) as Record<string, unknown>;
+  const model = (worker?.online ? worker.model : {}) as Record<string, unknown>;
   const disk = data.disk.used_bytes / data.disk.total_bytes;
 
   return (
@@ -80,21 +80,32 @@ export default function SystemPage() {
         <CardContent className="space-y-4">
           {recommendation?.recommended ? (
             <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] bg-[var(--color-accent-soft)] p-4">
-              <Badge tone="accent">best fit</Badge>
+              <Badge tone="accent">estimated fit</Badge>
               <span className="font-semibold">YuE2 3B · {recommendation.recommended.label}</span>
-              <span className="text-sm text-[var(--color-ink-muted)]">{formatBytes(recommendation.max_model_bytes ?? 0)} model file · up to 3B parameters among verified variants</span>
+              <span className="text-sm text-[var(--color-ink-muted)]">{formatBytes(recommendation.max_model_bytes ?? 0)} model file · published 3B benchmark variants</span>
             </div>
-          ) : <p className="text-sm text-[var(--color-ink-muted)]">No verified YuE2 variant fits the available GPU memory with the recommended headroom.</p>}
+          ) : <p className="text-sm text-[var(--color-ink-muted)]">{recommendation?.variants.length ? "No benchmark variant fits the estimated memory budget." : "GPU memory is unconfirmed; start the worker to estimate compatibility."}</p>}
           <div className="grid gap-2 sm:grid-cols-3">
             {(recommendation?.variants ?? []).map((variant) => (
               <div key={variant.filename} className="rounded-[var(--radius-md)] border border-[var(--color-line)] p-3">
-                <div className="flex items-center justify-between gap-2"><strong className="text-sm">{variant.label}</strong><Badge tone={variant.runnable ? "accent" : "neutral"}>{variant.runnable ? "runnable" : "too large"}</Badge></div>
+                <div className="flex items-center justify-between gap-2"><strong className="text-sm">{variant.label}</strong><Badge tone={variant.runnable ? "accent" : "neutral"}>{variant.runnable ? "estimated fit" : "insufficient headroom"}</Badge></div>
                 <p className="mt-2 text-xs text-[var(--color-ink-muted)]">{formatBytes(variant.model_bytes)} model · {formatBytes(variant.required_bytes)} recommended free VRAM</p>
               </div>
             ))}
           </div>
           <p className="text-xs text-[var(--color-ink-faint)]">{recommendation?.note}</p>
           <Button variant="surface" size="sm" asChild><Link href="/settings">Browse and download models</Link></Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>CPU and system memory</CardTitle><CardDescription>Host RAM reported by {data.memory.source.replaceAll("_", " ")}. Available memory includes reclaimable cache.</CardDescription></CardHeader>
+        <CardContent>
+          <Row label="CPU" value={data.memory.cpu_name ?? "Unknown"} />
+          <Row label="Logical processors" value={data.memory.logical_cpu_count ?? "Unknown"} />
+          <Row label="Total RAM" value={formatBytes(data.memory.total_bytes)} />
+          <Row label="Available RAM" value={formatBytes(data.memory.available_bytes)} />
+          <Row label="Used RAM" value={formatBytes(data.memory.used_bytes)} />
         </CardContent>
       </Card>
 
@@ -117,12 +128,12 @@ export default function SystemPage() {
                       data.worker.online ? "bg-[var(--color-accent)]" : "bg-[var(--color-ink-faint)]",
                     )}
                   />
-                  {worker ? worker.state : "offline"}
+                  {worker?.online ? worker.state : "offline"}
                 </span>
               }
             />
             <Row label="Backend" value={String(data.app.backend)} />
-            <Row label="Model loaded" value={model.loaded ? "yes" : "no"} />
+            <Row label="Model loaded" value={worker?.online ? model.loaded ? "yes" : "no" : "unknown (worker offline)"} />
             <Row label="Model" value={String(model.model ?? "—").split("/").pop() ?? "—"} />
             <Row label="Decoder" value={String(model.vae ?? "—").split("/").pop() ?? "—"} />
             <Row label="Device" value={model.device_index != null ? `cuda:${model.device_index}` : "—"} />

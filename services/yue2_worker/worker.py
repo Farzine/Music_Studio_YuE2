@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import signal
+import socket
 import sys
 import threading
 import time
@@ -30,6 +31,7 @@ from yue2_studio_core.constants import LATENT_FRAME_RATE  # noqa: E402
 from yue2_studio_core.errors import ErrorCode, StudioError, classify_exception  # noqa: E402
 from yue2_studio_core.errors import GUIDANCE  # noqa: E402
 from yue2_studio_core.model_metadata import is_gguf_model  # noqa: E402
+from yue2_studio_core.hardware import precision_capabilities  # noqa: E402
 from yue2_studio_core.models import GenerationJob, JobStatus, utcnow  # noqa: E402
 from yue2_studio_core.queue import FilesystemJobQueue  # noqa: E402
 from yue2_studio_core.settings import get_settings  # noqa: E402
@@ -98,25 +100,47 @@ def gpu_snapshot(active_index: int | None = None) -> dict:
     try:
         import torch
 
+        base = {"cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES")}
         if not torch.cuda.is_available():
-            return {"available": False, "devices": []}
+            return {**base, "available": False, "devices": [], "active_index": None}
         current = torch.cuda.current_device() if active_index is None else active_index
+        if current not in range(torch.cuda.device_count()):
+            current = None
         devices = []
         for index in range(torch.cuda.device_count()):
-            properties = torch.cuda.get_device_properties(index)
-            free, total = torch.cuda.mem_get_info(index)
+            try:
+                properties = torch.cuda.get_device_properties(index)
+            except Exception as exc:
+                devices.append({"index": index, "error": str(exc)})
+                continue
+            try:
+                free, total = torch.cuda.mem_get_info(index)
+            except Exception:
+                free, total = None, properties.total_memory
+            precision = precision_capabilities((properties.major, properties.minor))
+            try:
+                with torch.cuda.device(index):
+                    precision["bf16_supported"] = bool(torch.cuda.is_bf16_supported(including_emulation=False))
+                precision["precision_source"] = "compute_capability_and_torch_bf16"
+            except Exception:
+                pass  # Older runtimes retain the labelled hardware estimate.
             devices.append(
                 {
                     "index": index,
                     "name": properties.name,
+                    "uuid": str(properties.uuid) if getattr(properties, "uuid", None) else None,
                     "total_bytes": int(total),
-                    "free_bytes": int(free),
+                    "free_bytes": int(free) if free is not None else None,
                     "compute_capability": f"{properties.major}.{properties.minor}",
-                    "bf16_supported": bool(properties.major >= 8),
+                    **precision,
+                    "allocated_bytes": int(torch.cuda.memory_allocated(index)),
+                    "reserved_bytes": int(torch.cuda.memory_reserved(index)),
                 }
             )
-        snapshot = {"available": True, "devices": devices, "active_index": current}
+        snapshot = {**base, "available": True, "devices": devices, "active_index": current}
         for device in devices:
+            if device.get("error"):
+                continue
             if device["index"] == current:
                 snapshot.update(
                     {
@@ -130,7 +154,8 @@ def gpu_snapshot(active_index: int | None = None) -> dict:
                 )
         return snapshot
     except Exception as exc:
-        return {"available": False, "devices": [], "error": str(exc)}
+        return {"available": False, "devices": [], "active_index": None,
+                "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"), "error": str(exc)}
 
 
 def reset_gpu_peak(index: int | None = None) -> None:
@@ -164,6 +189,7 @@ class Worker:
         return self.store.root / "worker" / f"{self.worker_id}.json"
 
     def write_heartbeat(self, state: str) -> None:
+        model_state = self.manager.state()
         payload = {
             "worker_id": self.worker_id,
             "state": state,
@@ -171,10 +197,12 @@ class Worker:
             "updated_at": utcnow().isoformat(),
             "current_generation_id": self._current.id if self._current else None,
             "max_concurrent_gpu_jobs": self.settings.max_concurrent_gpu_jobs,
-            "model": self.manager.state(),
+            "model": model_state,
             "runtime": self.manager.runtime_versions(),
-            "gpu": gpu_snapshot(self._job_device_index if self._job_device_index is not None else self.manager.device_index),
+            "gpu": gpu_snapshot(self._job_device_index if self._job_device_index is not None else
+                                model_state.get("device_index") if model_state.get("loaded") else self.manager.device_index),
             "pid": os.getpid(),
+            "hostname": socket.gethostname(),
         }
         write_json_atomic(self.heartbeat_path, payload)
 

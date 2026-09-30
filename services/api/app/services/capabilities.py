@@ -18,8 +18,10 @@ from yue2_studio_core.delivery import format_catalogue
 from yue2_studio_core.model_metadata import audiocpp_available, describe_model_files, resolve_model_reference
 from yue2_studio_core.model_registry import ModelRegistry
 from yue2_studio_core.parameters import backend_capabilities, describe_registry
+from yue2_studio_core.queue import FilesystemJobQueue
 from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store
+from app.services.system_info import SystemInfoService
 
 
 def _ffmpeg_version(binary: str | None = None) -> tuple[str | None, tuple[int, int] | None]:
@@ -43,21 +45,6 @@ def _venv_has_package(venv: Path, name: str) -> bool:
         if (site / name).is_dir() or any(site.glob(f"{name}-*.dist-info")):
             return True
     return False
-
-
-def _compute_capability() -> tuple[int, int] | None:
-    try:
-        import pynvml  # nvidia-ml-py
-
-        pynvml.nvmlInit()
-        try:
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            major = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
-            return (int(major[0]), int(major[1]))
-        finally:
-            pynvml.nvmlShutdown()
-    except Exception:
-        return None
 
 
 class CapabilityService:
@@ -106,7 +93,16 @@ class CapabilityService:
         ffmpeg_version, ffmpeg_parts = _ffmpeg_version(str(ffmpeg_binary) if ffmpeg_binary.is_file() else None)
         worker_venv = Path(self.settings._resolve(".venv-yue2"))
         sheetsage2_model = self.settings.sheetsage2_path
-        compute = _compute_capability()
+        inventory = SystemInfoService(self.settings, self.registry.store, FilesystemJobQueue(self.registry.store)).devices()
+        selected = next((d for d in inventory["devices"] if d["index"] == inventory["selected_index"]
+                         and d.get("selectable") and d.get("cuda_available")), {})
+        compute = None
+        if selected.get("compute_capability"):
+            try:
+                parts = tuple(int(part) for part in selected["compute_capability"].split("."))
+                compute = parts if len(parts) == 2 else None
+            except (ValueError, AttributeError):
+                pass
         return {
             "ffmpeg": {
                 "version": ffmpeg_version,
@@ -125,6 +121,7 @@ class CapabilityService:
             "worker_venv": str(worker_venv) if worker_venv.is_dir() else None,
             "vllm_installed": worker_venv.is_dir() and _venv_has_package(worker_venv, "vllm"),
             "compute_capability": compute,
+            "device_index": inventory["selected_index"],
         }
 
     # -- capability assembly ---------------------------------------------- #

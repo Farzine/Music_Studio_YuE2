@@ -244,8 +244,11 @@ def test_gpu_inventory_and_selection(api_client):
     if body["devices"]:
         target = body["devices"][-1]["index"]
         updated = api_client.put("/api/v1/system/device", json={"device_index": target})
-        assert updated.status_code == 200
-        assert updated.json()["selected_index"] == target
+        if body["devices"][-1]["selectable"]:
+            assert updated.status_code == 200
+            assert updated.json()["selected_index"] == target
+        else:
+            assert updated.status_code == 422
 
     # An index the machine does not have is refused rather than stored.
     assert api_client.put("/api/v1/system/device", json={"device_index": 31}).status_code in {200, 422}
