@@ -60,12 +60,59 @@ and does not require editing `.env`.
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/api/v1/models` | Local weight directories and whether they exist. |
+| `GET` | `/api/v1/models` | Imports recognized legacy installations, refreshes registered paths and returns live availability alongside durable metadata. |
 | `GET` | `/api/v1/models/capabilities` | What this installation can do, with a reason for everything it cannot. |
+| `GET` | `/api/v1/models/{registry_id}` | Installation metadata, validation report and deletion preview. |
+| `POST` | `/api/v1/models/{registry_id}/validate` | Structural validation; JSON body `{"verify_checksum": false}`. `true` also checks weight SHA-256 expectations where provided. |
+| `GET` | `/api/v1/models/{registry_id}/deletion-preview` | Exact paths/files, estimated reclaimed space, blockers and confirmation token. |
+| `DELETE` | `/api/v1/models/{registry_id}` | JSON body requires `confirmation_token` and `confirmed_path` from the preview. |
 | `GET` | `/api/v1/generation/schema` | The parameter registry annotated for the active backend. The frontend renders forms from this. |
 | `GET` | `/api/v1/generation/workflow-mapping` | The generated ComfyUI mapping, for the technical drawer. |
 | `POST` | `/api/v1/generation/estimate` | Token budget for a request, before it is queued. Takes the same partial config a generation does. |
 | `GET` | `/api/v1/generation/limits` | The active checkpoint's own limits, and where each number came from. |
+
+Model inventory includes `download_status`, `files_complete`,
+`validation_status`, `registration_status`, `compatibility_status`,
+`inference_status`, `inference_ready` and `problem`. `present` remains the legacy
+readiness projection. `currently_loaded` is `null` until worker residency can be
+established. Metadata such as `parameter_count`, `precision` and `quantization`
+is nullable. See [model states](model-setup.md#downloaded-and-available-are-different-states)
+for the current validation limits.
+
+Local entries add `registry_id`, `aliases`, `created_at`, `updated_at` and nullable
+`commit_hash`. `id` remains the legacy directory reference used by task configs;
+the registry ID addresses action endpoints and is not a new checkpoint input. The API
+reports `registration_status=registered` independently of availability. Unknown
+repository defaults remain `discovered`. Registry records persist installation
+facts only; readiness and GPU residency are not cached there. Missing entries
+remain listed with last known metadata and current file blockers. Corrupt or
+unsupported registry documents return `INVALID_CONFIG` (HTTP 422) with recovery
+guidance, and are never silently overwritten. See
+[registry recovery](model-setup.md#local-model-registry).
+
+Schema options preserve the inventory's `enabled=false` and its reason, including
+the configured default. Generation submission reports a missing runtime as
+`UNSUPPORTED_CAPABILITY` (HTTP 409), rather than claiming downloaded weights are
+missing. Missing required files still use `MODEL_NOT_FOUND` (HTTP 404); selecting
+a VAE as the inference checkpoint or invalid installation metadata is
+`INVALID_CONFIG` (HTTP 422).
+
+Validation returns HTTP 200 with an explicit `validation` result, including
+`validation_status`, compatibility, problem, checked files, hashes and observed
+metadata. `validated` means structural checks passed; unavailable runtimes and
+incompatible architectures remain separate blockers. Unknown encodings are
+`not_validated` with unknown compatibility. Reports expire when the file
+fingerprint changes. Native VAE selection/latent-width mismatch is validated
+independently of the model. Inventory adds `tensor_element_count`, nullable
+`checksum_sha256` and `deletion_status`; tensor elements are not parameter counts.
+
+Deletion is refused with HTTP 409 for task/residency/lease conflicts, external or
+protected locations, overlapping installations, or changed confirmation data.
+Missing IDs use HTTP 404; missing confirmation fields use HTTP 422. Successful
+cleanup returns `deleted=true, complete=true`. Filesystem cleanup failure returns
+`deleted=false, complete=false` with an error and retry guidance; the registry
+retains a `deleting` journal. Inspect and confirm a fresh preview to retry.
+See [validation and deletion](model-setup.md#structural-validation-and-checksums).
 
 ### Token budget
 

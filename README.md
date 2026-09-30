@@ -78,6 +78,11 @@ disabled with the specific reason, rather than quietly missing.
 - Real progress only: no invented percentages.
 - A reproducibility manifest per generation, including weight hashes.
 - Pick which GPU runs the model, from the System page, without a restart.
+- Hugging Face model downloads with separate file and inference-availability
+  states; unavailable models show the specific missing prerequisite.
+- Persistent model inventory with structural/checksum validation and confirmed
+  deletion APIs that protect active tasks and resident model files. See
+  [model management](docs/model-setup.md#local-model-registry); dedicated action UI is planned.
 - Cooperative cancellation of a running job.
 - Responsive layout, keyboard-reachable help, light and dark themes.
 

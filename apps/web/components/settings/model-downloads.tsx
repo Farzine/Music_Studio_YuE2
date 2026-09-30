@@ -15,7 +15,7 @@ import { formatBytes } from "@/lib/format";
 export function ModelDownloads() {
   const client = useQueryClient();
   const { data: downloads } = useModelDownloads();
-  const { data: capabilities } = useCapabilities();
+  const { data: capabilities, error: availabilityError, isFetching: checkingAvailability } = useCapabilities();
   const [repoId, setRepoId] = React.useState("audio-cpp/Yue2-3B-GGUF");
   const [revision, setRevision] = React.useState("");
   const [filename, setFilename] = React.useState("");
@@ -89,19 +89,28 @@ export function ModelDownloads() {
         </div>
       ) : null}
       {error ? <ErrorNotice message={error} /> : null}
-      {(downloads?.items ?? []).slice().reverse().map((item) => (
-        <div key={item.id} className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] p-3">
-          <Badge tone={item.status === "complete" ? "accent" : item.status === "failed" ? "danger" : "warn"}>{item.status}</Badge>
-          <span className="min-w-0 flex-1 break-all text-sm">{item.repo_id} · {item.filename}</span>
-          {item.status === "downloading" ? <span className="text-xs">{item.completed_files}/{item.total_files ?? "?"} files · {item.current_file ?? "checking repository"}</span> : null}
-          {item.error ? <span className="w-full text-xs text-[var(--color-danger)]">{item.error}</span> : null}
-          {item.status === "complete" && item.path ? (
-            capabilities?.models.find((model) => model.id === item.path)?.present ? (
-              <Button size="sm" variant="surface" asChild><Link href={`/create?model=${encodeURIComponent(item.path)}`}>Use for a song</Link></Button>
-            ) : <span className="w-full text-xs text-[var(--color-ink-faint)]">Downloaded, but this model is not ready for inference. Check the installed models list below.</span>
-          ) : null}
-        </div>
-      ))}
+      {(downloads?.items ?? []).slice().reverse().map((item) => {
+        const model = capabilities?.models.find((entry) => entry.id === item.path);
+        return (
+          <div key={item.id} className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] p-3">
+            <Badge tone={item.status === "complete" ? "accent" : item.status === "failed" ? "danger" : "warn"}>{item.status === "complete" ? "Downloaded" : item.status}</Badge>
+            <span className="min-w-0 flex-1 break-all text-sm">{item.repo_id} · {item.filename}</span>
+            {item.status === "downloading" ? <span className="text-xs">{item.completed_files}/{item.total_files ?? "?"} files · {item.current_file ?? "checking repository"}</span> : null}
+            {item.error ? <span className="w-full text-xs text-[var(--color-danger)]">{item.error}</span> : null}
+            {item.status === "complete" && item.path ? (
+              model?.inference_ready ? (
+                <Button size="sm" variant="surface" asChild><Link href={`/create?model=${encodeURIComponent(item.path)}`}>Use for a song</Link></Button>
+              ) : <span role="status" className="w-full text-xs text-[var(--color-ink-faint)]">
+                {model?.problem ?? (availabilityError
+                  ? "Download complete. Inference availability could not be checked. Refresh to retry."
+                  : checkingAvailability || !capabilities
+                    ? "Download complete. Checking inference availability…"
+                    : "Downloaded files are not in the model inventory. Check the configured model directory.")}
+              </span>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

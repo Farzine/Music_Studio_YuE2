@@ -20,6 +20,7 @@ from yue2_studio_core.errors import (
     ValidationError,
 )
 from yue2_studio_core.ids import new_id
+from yue2_studio_core.model_metadata import resolve_vae_reference, vae_compatibility_error
 from yue2_studio_core.models import (
     GenerationConfig,
     GenerationJob,
@@ -173,18 +174,41 @@ class GenerationService:
                 f"The selected model '{config.model.checkpoint}' is not one this installation knows about.",
                 details={"parameter": "model.checkpoint", "available": available},
             )
-        if not entry["present"]:
+        if entry["role"] != "model":
+            raise ValidationError("The selected entry is a VAE. Choose an inference model separately.",
+                                  details={"parameter": "model.checkpoint", "model": entry["id"]})
+        self._require_ready(entry, "model.checkpoint")
+        if entry["format"] == "safetensors":
+            vae_reference = resolve_vae_reference(config.model.vae, self.settings)
+            vae = self.capabilities.resolve_model_choice(vae_reference)
+            if vae is None or vae["role"] != "vae":
+                raise ValidationError("Choose an installed, compatible VAE separately from the inference model.",
+                                      details={"parameter": "model.vae", "vae": vae_reference})
+            self._require_ready(vae, "model.vae")
+            problem = vae_compatibility_error(entry["id"], vae["id"])
+            if problem:
+                raise UnsupportedCapabilityError(problem, details={"parameter": "model.vae"})
+        return entry
+
+    @staticmethod
+    def _require_ready(entry: dict, parameter: str) -> None:
+        if not entry["inference_ready"]:
+            code = ErrorCode.MODEL_NOT_FOUND
+            if entry["inference_status"] in {"runtime_unavailable", "incompatible", "unknown"}:
+                code = ErrorCode.UNSUPPORTED_CAPABILITY
+            elif entry["inference_status"] == "validation_failed":
+                code = ErrorCode.INVALID_CONFIG
             raise StudioError(
-                ErrorCode.MODEL_NOT_FOUND,
+                code,
                 f"The selected model '{entry['label']}' cannot be loaded: {entry['problem']}",
                 details={
-                    "parameter": "model.checkpoint",
+                    "parameter": parameter,
                     "model": entry["id"],
                     "path": entry["path"],
                     "problem": entry["problem"],
+                    "inference_status": entry["inference_status"],
                 },
             )
-        return entry
 
     def _validate_reference_audio(self, config: GenerationConfig) -> None:
         """Cover mode: the upload has to exist and be readable, now, not later."""
@@ -228,6 +252,17 @@ class GenerationService:
     # -- creation ---------------------------------------------------------- #
 
     def create_generation(
+        self, *, overrides: dict[str, Any] | None, project_id: str | None = None,
+        title: str = "", tags: list[str] | None = None, priority: int = 0,
+        parent_generation_id: str | None = None,
+    ) -> tuple[GenerationJob, SongProject, list[str]]:
+        # Admission and deletion use the same lock: validation cannot race file removal.
+        with self.store.queue_lock():
+            return self._create_generation(overrides=overrides, project_id=project_id,
+                                           title=title, tags=tags, priority=priority,
+                                           parent_generation_id=parent_generation_id)
+
+    def _create_generation(
         self,
         *,
         overrides: dict[str, Any] | None,

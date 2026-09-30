@@ -11,6 +11,7 @@ from yue2_studio_core.errors import ValidationError
 from yue2_studio_core.queue import FilesystemJobQueue
 from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store
+from yue2_studio_core.model_registry import ModelRegistry
 
 from app.services.capabilities import CapabilityService
 from app.services.model_downloads import ModelDownloads
@@ -39,6 +40,8 @@ def test_gguf_download_is_registered_only_when_companions_are_present(tmp_path, 
         path = local_dir / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"model")
+        if filename.endswith(".json"):
+            path.write_text('{"model_type":"yue2_vae"}' if "vae-config" in filename else '{"model_type":"yue2"}')
         return str(path)
 
     monkeypatch.setattr("app.services.model_downloads.hf_hub_download", fake_download)
@@ -48,8 +51,31 @@ def test_gguf_download_is_registered_only_when_companions_are_present(tmp_path, 
     downloads.run(job["id"])
     complete = downloads.get(job["id"])
     assert complete["status"] == "complete"
+    # Completion registers durably, without needing an inventory request first.
+    assert ModelRegistry(settings, store).path.is_file()
     entry = next(item for item in CapabilityService(settings).local_models() if item["id"] == complete["path"])
     assert entry["present"] and entry["format"] == "gguf"
+    assert entry["registration_status"] == "registered"
+    assert entry["commit_hash"] == "a" * 40
+
+
+def test_failed_transfer_does_not_register_partial_weights(tmp_path, monkeypatch):
+    settings = Settings(data_dir=str(tmp_path / "data"), yue2_models_dir=str(tmp_path / "models"))
+    downloads = ModelDownloads(settings, Store(settings))
+    info = SimpleNamespace(sha="a" * 40, siblings=[SimpleNamespace(rfilename="other.gguf", size=3)])
+    monkeypatch.setattr("app.services.model_downloads.HfApi", lambda: SimpleNamespace(model_info=lambda *a, **kw: info))
+
+    def interrupted(repo_id, filename, *, revision, local_dir):
+        local_dir.mkdir(parents=True)
+        (local_dir / (filename + ".part")).write_bytes(b"partial")
+        raise OSError("Network interrupted")
+
+    monkeypatch.setattr("app.services.model_downloads.hf_hub_download", interrupted)
+    job = downloads.start("owner/repository", "other.gguf", None)
+    downloads.run(job["id"])
+    assert downloads.get(job["id"])["status"] == "failed"
+    assert not downloads.registry.path.exists()
+    assert not list(settings.models_path.rglob("studio-model.json"))
 
 
 def test_recommendation_uses_selected_gpu_and_headroom(tmp_path, monkeypatch):

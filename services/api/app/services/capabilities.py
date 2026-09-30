@@ -8,8 +8,6 @@ offers a mode that would fail at generation time.
 from __future__ import annotations
 
 import copy
-import json
-import os
 import shutil
 import subprocess
 from functools import lru_cache
@@ -17,8 +15,11 @@ from pathlib import Path
 from typing import Any
 
 from yue2_studio_core.delivery import format_catalogue
+from yue2_studio_core.model_metadata import audiocpp_available, describe_model_files, resolve_model_reference
+from yue2_studio_core.model_registry import ModelRegistry
 from yue2_studio_core.parameters import backend_capabilities, describe_registry
 from yue2_studio_core.settings import Settings
+from yue2_studio_core.store import Store
 
 
 def _ffmpeg_version(binary: str | None = None) -> tuple[str | None, tuple[int, int] | None]:
@@ -60,65 +61,15 @@ def _compute_capability() -> tuple[int, int] | None:
 
 
 class CapabilityService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, store: Store | None = None) -> None:
         self.settings = settings
+        self.registry = ModelRegistry(settings, store)
 
     # -- probes ----------------------------------------------------------- #
 
     @staticmethod
     def _describe_model(reference: str, role: str, *, is_default: bool = False) -> dict[str, Any]:
-        path = Path(reference)
-        present = path.is_dir()
-        metadata_path = path / "studio-model.json"
-        metadata = {}
-        if metadata_path.is_file():
-            try:
-                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                pass
-        gguf = str(metadata.get("filename", "")).endswith(".gguf")
-        if gguf:
-            main = path / metadata["filename"]
-            companions = (
-                "yue2-vae-f16.gguf", "sidecars/yue2-model-config.json",
-                "sidecars/yue2-generation-config.json", "sidecars/yue2-qwen.tiktoken",
-                "sidecars/yue2-vae-config.json",
-            )
-            missing = [name for name in companions if not (path / name).is_file()]
-            problem = None if main.is_file() and not missing else "Missing YuE2 GGUF companion files: " + ", ".join(missing)
-            if not main.is_file():
-                problem = f"The selected file {metadata['filename']} is missing."
-            elif not main.name.lower().startswith("yue2-3b-"):
-                problem = "This GGUF file is not a supported YuE2 main model."
-            return {
-                "id": reference, "role": role, "label": f"{metadata.get('repo_id', path.name)} · {main.name}",
-                "path": reference, "present": problem is None, "is_local": True,
-                "is_default": is_default, "bytes": main.stat().st_size if main.is_file() else None,
-                "problem": problem, "format": "gguf", "filename": metadata["filename"],
-                "revision": metadata.get("revision"),
-            }
-        weights = path / "model.safetensors"
-        config = path / "config.json"
-        complete = present and weights.is_file() and config.is_file()
-        problem = None
-        if not present:
-            problem = "The directory does not exist."
-        elif not config.is_file():
-            problem = "The directory has no config.json."
-        elif not weights.is_file():
-            problem = "The directory has no model.safetensors."
-        return {
-            "id": reference,
-            "role": role,
-            "label": path.name if present else reference,
-            "path": str(path) if present else None,
-            "present": complete,
-            "is_local": present,
-            "is_default": is_default,
-            "bytes": weights.stat().st_size if weights.is_file() else None,
-            "problem": problem,
-            "format": "safetensors",
-        }
+        return describe_model_files(reference, role, is_default=is_default).model_dump(mode="json")
 
     def local_models(self) -> list[dict[str, Any]]:
         """Every model and decoder directory the studio knows about.
@@ -126,67 +77,22 @@ class CapabilityService:
         Entries that are missing or incomplete are still listed, with the
         specific reason, so the selector can explain rather than simply omit.
         """
-        entries: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        candidates = [
-            ("model", self.settings.model_reference, True),
-            ("vae", self.settings.vae_reference, True),
-            ("vae", self.settings.vae_legacy_reference, False),
-        ]
-        for role, reference, is_default in candidates:
-            if reference in seen:
-                continue
-            seen.add(reference)
-            entries.append(self._describe_model(reference, role, is_default=is_default))
-
-        # Any sibling directory that looks like a model is offered too, so a
-        # second checkpoint can be dropped in without editing configuration.
-        roots = {self.settings.models_path}
-        configured = Path(self.settings.model_reference)
-        if configured.is_dir():
-            roots.add(configured.parent)
-        directories = []
-        for root in roots:
-            if root.is_dir():
-                directories += list(root.iterdir())
-                if (root / "hub").is_dir():
-                    directories += list((root / "hub").iterdir())
-        if directories:
-            for directory in sorted(set(directories)):
-                reference = str(directory)
-                if reference in seen or not directory.is_dir():
-                    continue
-                if (directory / "studio-model.json").is_file():
-                    seen.add(reference)
-                    entries.append(self._describe_model(reference, "model"))
-                    continue
-                if not (directory / "config.json").is_file():
-                    continue
-                kind = None
-                try:
-                    kind = json.loads((directory / "config.json").read_text()).get("model_type")
-                except (OSError, json.JSONDecodeError):
-                    continue
-                if kind not in {"yue2", "yue2_vae"}:
-                    continue
-                seen.add(reference)
-                entries.append(self._describe_model(reference, "model" if kind == "yue2" else "vae"))
-        cli = self.settings.audiocpp_executable
-        if not (shutil.which(cli) or (Path(cli).is_file() and os.access(cli, os.X_OK))):
+        entries = self.registry.inventory()
+        if not audiocpp_available(self.settings):
             for entry in entries:
-                if entry["format"] == "gguf" and entry["present"]:
-                    entry["present"] = False
-                    entry["problem"] = "audio.cpp CLI is not installed. Run make install-audiocpp."
-        return entries
+                if entry.format == "gguf" and entry.inference_ready:
+                    entry.inference_status = "runtime_unavailable"
+                    entry.problem = "audio.cpp CLI is not installed. Run make install-audiocpp."
+        return [entry.model_dump(mode="json") for entry in entries]
 
     def resolve_model_choice(self, checkpoint: str) -> dict[str, Any] | None:
         """The inventory entry a configuration refers to, or None if unknown."""
-        from yue2_studio_core.models import DEFAULT_MODEL
-
-        if checkpoint == DEFAULT_MODEL:
-            return self._describe_model(self.settings.model_reference, "model", is_default=True)
+        reference = resolve_model_reference(checkpoint, self.settings)
         for entry in self.local_models():
-            if entry["id"] == checkpoint:
+            if entry["id"] == reference or (
+                reference in entry["aliases"] and Path(reference).is_dir()
+                and Path(reference).resolve() == Path(entry["id"]).resolve()
+            ):
                 return entry
         return None
 
@@ -318,12 +224,13 @@ class CapabilityService:
         from yue2_studio_core.models import DEFAULT_MODEL
 
         capabilities = self.capabilities(backend)
-        default = self._describe_model(self.settings.model_reference, "model", is_default=True)
+        default = next(entry for entry in capabilities["models"]
+                       if entry["role"] == "model" and entry["is_default"])
         options = [
             {
                 "value": DEFAULT_MODEL,
                 "label": f"Default — {default['label']}",
-                "enabled": default["present"],
+                "enabled": default["inference_ready"],
                 "disabled_reason": default["problem"],
                 "role": "model",
                 "bytes": default["bytes"],
@@ -340,7 +247,7 @@ class CapabilityService:
                 {
                     "value": entry["id"],
                     "label": entry["label"],
-                    "enabled": entry["present"],
+                    "enabled": entry["inference_ready"],
                     "disabled_reason": entry["problem"],
                     "role": "model",
                     "bytes": entry["bytes"],

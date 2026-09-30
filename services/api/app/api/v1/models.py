@@ -6,10 +6,11 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query
 from pydantic import BaseModel
 
-from app.core.deps import budget_provider, capability_provider, model_downloads_provider
+from app.core.deps import budget_provider, capability_provider, model_downloads_provider, model_service_provider
 from app.services.budget import BudgetService
 from app.services.capabilities import CapabilityService
 from app.services.model_downloads import ModelDownloads
+from app.services.models import ModelService
 
 router = APIRouter(tags=["models"])
 
@@ -61,6 +62,35 @@ def model_capabilities(
     capabilities: CapabilityService = Depends(capability_provider),
 ) -> dict:
     return capabilities.capabilities(backend)
+
+
+class ValidateRequest(BaseModel):
+    verify_checksum: bool = False
+
+
+class DeleteRequest(BaseModel):
+    confirmation_token: str
+    confirmed_path: str
+
+
+@router.get("/models/{registry_id}")
+def inspect_model(registry_id: str, models: ModelService = Depends(model_service_provider)) -> dict:
+    return models.inspect(registry_id)
+
+
+@router.post("/models/{registry_id}/validate")
+def validate_model(registry_id: str, payload: ValidateRequest, models: ModelService = Depends(model_service_provider)) -> dict:
+    return models.validate(registry_id, verify_checksum=payload.verify_checksum)
+
+
+@router.get("/models/{registry_id}/deletion-preview")
+def deletion_preview(registry_id: str, models: ModelService = Depends(model_service_provider)) -> dict:
+    return models.preview(registry_id)
+
+
+@router.delete("/models/{registry_id}")
+def delete_model(registry_id: str, payload: DeleteRequest, models: ModelService = Depends(model_service_provider)) -> dict:
+    return models.delete(registry_id, **payload.model_dump())
 
 
 @router.get("/generation/schema")

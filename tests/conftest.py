@@ -6,6 +6,8 @@ library is never touched, and the settings cache is cleared for each one.
 from __future__ import annotations
 
 import os
+import json
+import struct
 import sys
 from pathlib import Path
 
@@ -15,6 +17,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "packages" / "core"))
 sys.path.insert(0, str(REPO_ROOT / "services" / "api"))
+
+
+@pytest.fixture()
+def native_model_files():
+    """Write an actual tiny safetensors layout, rather than pretending text is weights."""
+    def write(path: Path, *, role: str = "model", latent_dim: int = 64):
+        path.mkdir(parents=True, exist_ok=True)
+        config = {"model_type": "yue2" if role == "model" else "yue2_vae", "latent_dim": latent_dim}
+        (path / "config.json").write_text(json.dumps(config))
+        header = json.dumps({"weight": {"dtype": "F16", "shape": [2], "data_offsets": [0, 4]}}).encode()
+        (path / "model.safetensors").write_bytes(struct.pack("<Q", len(header)) + header + b"\0" * 4)
+        return path
+    return write
 
 
 @pytest.fixture()
@@ -62,6 +77,7 @@ def api_client(data_dir: Path):
         deps.queue_provider,
         deps.capability_provider,
         deps.model_downloads_provider,
+        deps.model_service_provider,
         deps.project_service_provider,
         deps.system_info_provider,
         deps.generation_service_provider,
@@ -79,6 +95,7 @@ def api_client(data_dir: Path):
         deps.queue_provider,
         deps.capability_provider,
         deps.model_downloads_provider,
+        deps.model_service_provider,
         deps.project_service_provider,
         deps.system_info_provider,
         deps.generation_service_provider,

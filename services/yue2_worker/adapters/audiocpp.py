@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import shutil
 from pathlib import Path
 
@@ -11,6 +10,7 @@ import numpy as np
 import soundfile as sf
 from yue2_studio_core.errors import ErrorCode, StudioError
 from yue2_studio_core.manifest import identity
+from yue2_studio_core.model_metadata import audiocpp_available, read_model_metadata, resolve_model_reference
 from yue2_studio_core.models import GenerationConfig, GenerationMode, JobStatus
 from yue2_studio_core.parameters import gguf_unsupported_parameters
 from yue2_studio_core.settings import Settings
@@ -40,11 +40,9 @@ class AudioCppBackend:
             unsupported.append("cover mode")
         if unsupported:
             raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "GGUF does not support: " + ", ".join(unsupported), stage="validation")
-        if not shutil.which(self.settings.audiocpp_executable) and not (
-            Path(self.settings.audiocpp_executable).is_file() and os.access(self.settings.audiocpp_executable, os.X_OK)
-        ):
+        if not audiocpp_available(self.settings):
             raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "audio.cpp CLI is not installed. Set AUDIOCPP_CLI_PATH to audiocpp_cli.", stage="validation")
-        metadata = Path(config.model.checkpoint) / "studio-model.json"
+        metadata = Path(resolve_model_reference(config.model.checkpoint, self.settings)) / "studio-model.json"
         if not metadata.is_file():
             raise StudioError(ErrorCode.MODEL_NOT_FOUND, "GGUF model metadata is missing.", stage="validation")
         return (["audio.cpp uses its own duration handling; automatic fit-to-plan is unavailable."]
@@ -58,8 +56,8 @@ class AudioCppBackend:
 
     async def generate_plan(self, context: GenerationContext) -> PlanResult:
         config = context.config
-        root = Path(config.model.checkpoint)
-        metadata = json.loads((root / "studio-model.json").read_text(encoding="utf-8"))
+        root = Path(resolve_model_reference(config.model.checkpoint, self.settings))
+        metadata = read_model_metadata(str(root))
         filename = metadata["filename"]
         job = self.store.get_job(context.job_id)
         output = self.store.generation_dir(job.project_id, job.id) / "audiocpp"
@@ -150,8 +148,8 @@ class AudioCppBackend:
 
     async def finalise(self, context: GenerationContext, plan: PlanResult, tokens: AudioTokensResult, audio: DecodedAudio) -> BackendResult:
         config = context.config
-        root = Path(config.model.checkpoint)
-        metadata = json.loads((root / "studio-model.json").read_text(encoding="utf-8"))
+        root = Path(resolve_model_reference(config.model.checkpoint, self.settings))
+        metadata = read_model_metadata(str(root))
         weights = {
             "model": {"file": metadata["filename"], "sha256": sha256_file(root / metadata["filename"])},
             "vae": {"file": "yue2-vae-f16.gguf", "sha256": sha256_file(root / "yue2-vae-f16.gguf")},

@@ -29,6 +29,7 @@ sys.path.insert(0, str(REPO_ROOT / "packages" / "core"))
 from yue2_studio_core.constants import LATENT_FRAME_RATE  # noqa: E402
 from yue2_studio_core.errors import ErrorCode, StudioError, classify_exception  # noqa: E402
 from yue2_studio_core.errors import GUIDANCE  # noqa: E402
+from yue2_studio_core.model_metadata import is_gguf_model  # noqa: E402
 from yue2_studio_core.models import GenerationJob, JobStatus, utcnow  # noqa: E402
 from yue2_studio_core.queue import FilesystemJobQueue  # noqa: E402
 from yue2_studio_core.settings import get_settings  # noqa: E402
@@ -142,16 +143,6 @@ def reset_gpu_peak(index: int | None = None) -> None:
         pass
 
 
-def is_gguf_model(reference: str) -> bool:
-    metadata = Path(reference) / "studio-model.json"
-    if not metadata.is_file():
-        return False
-    try:
-        return str(json.loads(metadata.read_text(encoding="utf-8")).get("filename", "")).endswith(".gguf")
-    except (OSError, ValueError):
-        return False
-
-
 class Worker:
     def __init__(self, *, once: bool = False) -> None:
         self.settings = get_settings()
@@ -223,9 +214,15 @@ class Worker:
     # -- job execution ----------------------------------------------------- #
 
     async def run_job(self, job: GenerationJob) -> None:
+        from yue2_studio_core.model_files import model_file_leases
+
+        with model_file_leases(self.store, [self.manager.resolve_model(job.config), self.manager.resolve_vae(job.config)]):
+            await self._run_job(job)
+
+    async def _run_job(self, job: GenerationJob) -> None:
         self._current = job
         self._job_device_index = self.manager.device_index
-        is_gguf = is_gguf_model(job.config.model.checkpoint)
+        is_gguf = is_gguf_model(self.manager.resolve_model(job.config))
         backend = AudioCppBackend(self.settings, self.store, self._job_device_index) if is_gguf else self.backend
         if is_gguf:
             self.backend.end_job() if hasattr(self.backend, "end_job") else None

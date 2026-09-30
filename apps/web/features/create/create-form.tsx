@@ -68,7 +68,9 @@ export function CreateForm({
   const decoderMode = (getPath(effective, "decoder.mode") as string) ?? "tiled";
   const budget = (getPath(effective, "model.memory_budget_gib") as number) ?? 40;
   const selectedModel = (getPath(effective, "model.checkpoint") as string) ?? "default";
-  const gguf = capabilities?.models.find((item) => item.id === selectedModel)?.format === "gguf";
+  const modelOption = schema?.parameters.find((item) => item.key === "model.checkpoint")?.options
+    ?.find((item) => item.value === selectedModel);
+  const gguf = modelOption?.format === "gguf";
 
   // Live token budget for exactly what would be submitted. The backend counts
   // with the checkpoint's own tokenizer, so the figures are the model's, not a
@@ -110,13 +112,16 @@ export function CreateForm({
   const needsLyrics = mode !== "off";
   const needsReference = mode === "cover";
   const canSubmit =
+    modelOption?.enabled === true &&
     style.trim().length > 0 &&
     (!needsLyrics || lyrics.trim().length > 0) &&
     (!needsReference || Boolean(reference)) &&
     !(gguf && mode === "cover") &&
     !overBudget;
 
-  const blocker = !style.trim()
+  const blocker = !modelOption || modelOption.enabled !== true
+    ? modelOption?.disabled_reason ?? (schemaLoading ? "Checking model availability…" : "Choose an available inference model in Model settings.")
+    : !style.trim()
     ? "Describe a style to get started."
     : needsLyrics && !lyrics.trim()
       ? "Add lyrics, or switch to Direct Audio."

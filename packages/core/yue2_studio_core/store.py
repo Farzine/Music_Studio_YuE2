@@ -90,6 +90,23 @@ def _dump(model: BaseModel) -> dict:
     return json.loads(model.model_dump_json())
 
 
+@contextmanager
+def file_lock(path: Path, *, shared: bool = False, blocking: bool = True) -> Iterator[None]:
+    """Serialise filesystem read/modify/write operations across processes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        operation = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
+        try:
+            fcntl.flock(handle, operation | (0 if blocking else fcntl.LOCK_NB))
+        except BlockingIOError as exc:
+            raise ConflictError("Model files are in use by a worker, download or validation. Try again after unloading or finishing the operation.") from exc
+        yield
+    finally:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+        os.close(handle)
+
+
 class Store:
     """Everything the studio persists, over a plain directory tree."""
 
@@ -368,15 +385,8 @@ class Store:
     @contextmanager
     def queue_lock(self) -> Iterator[None]:
         """Advisory lock serialising job claims across processes."""
-        lock_path = self.jobs_dir / ".queue.lock"
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        handle = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX)
+        with file_lock(self.jobs_dir / ".queue.lock"):
             yield
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
-            os.close(handle)
 
     def claim_next_job(self, worker_id: str, *, max_concurrent: int = 1) -> GenerationJob | None:
         """Atomically take the next queued job, respecting the GPU limit."""

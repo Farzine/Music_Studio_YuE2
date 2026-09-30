@@ -199,6 +199,7 @@ export interface ParameterOption {
   path?: string | null;
   is_default?: boolean;
   role?: string;
+  format?: ModelEntry["format"];
 }
 
 /**
@@ -262,8 +263,32 @@ export interface ModelEntry {
   is_default: boolean;
   bytes: number | null;
   problem: string | null;
-  format?: "safetensors" | "gguf";
-  filename?: string;
+  format: "safetensors" | "gguf" | "unknown";
+  filename: string | null;
+  source: "local" | "huggingface";
+  huggingface_repo: string | null;
+  revision: string | null;
+  commit_hash: string | null;
+  registry_id: string | null;
+  aliases: string[];
+  created_at: string | null;
+  updated_at: string | null;
+  architecture: string | null;
+  parameter_count: number | null;
+  quantization: string | null;
+  precision: string | null;
+  backend: string | null;
+  tensor_element_count: number | null;
+  checksum_sha256: string | null;
+  download_status: "missing" | "downloaded" | "unknown";
+  files_complete: boolean;
+  validation_status: "not_validated" | "validated" | "failed";
+  deletion_status: "active" | "deleting";
+  registration_status: "discovered" | "registered";
+  compatibility_status: "supported" | "incompatible" | "unknown";
+  inference_status: "ready" | "files_missing" | "runtime_unavailable" | "incompatible" | "validation_failed" | "unknown";
+  inference_ready: boolean;
+  currently_loaded: boolean | null;
 }
 
 export interface Capabilities {

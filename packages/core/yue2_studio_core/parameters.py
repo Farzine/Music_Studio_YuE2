@@ -175,6 +175,9 @@ def describe_registry(capabilities: dict, dynamic_options: dict[str, list[dict]]
             parameter["options"] = dynamic_options.get(source, [])
 
         for option in parameter.get("options") or []:
+            # Dynamic inventory options already carry prerequisite failures.
+            if option.get("enabled") is False:
+                continue
             capability = option.get("capability")
             mode_supported = parameter["key"] != "prompt.mode" or option["value"] in supported_modes
             if capability:

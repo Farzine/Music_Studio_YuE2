@@ -29,6 +29,145 @@ estimate, not a guarantee for every song length or GPU. It reports the largest
 verified variant and its 3B parameter count; it does not estimate capacity for
 unrelated model families.
 
+## Downloaded and available are different states
+
+Settings reports downloaded weights separately from inference availability. A
+complete GGUF download remains **Downloaded** when audio.cpp is unavailable;
+the UI shows the missing executable and how to install it. Missing sidecars,
+unsupported GGUF packages and unreadable installation metadata have their own
+reasons. Downloading does not select a model for a task or load it onto a GPU.
+
+The API inventory exposes:
+
+| Field | Meaning |
+|---|---|
+| `download_status` | Main weights exist (`downloaded`), are missing, or cannot be identified (`unknown`). |
+| `files_complete` | The existing adapter's required files are present. |
+| `validation_status` | `not_validated`, `validated` after structural checks, or `failed` with a specific corruption/metadata reason. |
+| `registration_status` | `registered` for durable local records; `discovered` for unresolved repository defaults. Registration does not imply validation or loading. |
+| `compatibility_status` | Current adapter file rules say supported/incompatible, or metadata cannot be interpreted. |
+| `inference_status`, `inference_ready` | Preflight availability and its specific blocker, including a missing audio.cpp executable. |
+| `currently_loaded` | Currently `null`: inventory scanning cannot establish worker/GPU residency. |
+| `deletion_status` | `active`, or `deleting` while an interrupted cleanup needs retry. |
+
+Preflight availability is not a successful load, checksum validation or a GPU
+memory guarantee. Unknown parameter counts, precision and quantization remain
+`null`, rather than being inferred from a repository name. The legacy `present`
+field remains a projection of `inference_ready` for older clients.
+
+The generation selector uses backend availability rules, and submission refuses
+an unavailable model. The `default` choice resolves to the same configured
+checkpoint in the API and worker, including GGUF installations. Model and VAE
+remain separate stored fields; the current GGUF adapter still requires its
+bundled F16 VAE.
+
+## Local model registry
+
+The first inventory scan imports configured native model/VAE directories and
+recognized sibling or `models/hub` installations into
+`DATA_DIR/model-registry.json`. Successful studio downloads register there
+before their download job completes. Existing weights are neither moved nor
+downloaded again. Repeated scans preserve IDs and timestamps, and do not
+rewrite unchanged records. Concurrent imports use the existing filesystem lock
+and atomic JSON write pattern.
+
+Inventory `id` values remain existing directory paths so saved projects,
+generation requests and default/standard/legacy choices keep working. Each
+local installation also receives a deterministic `registry_id` based on its
+canonical directory and role. Symlink path aliases share a record. Registry IDs
+identify inspect/validate/delete API resources; task configuration still uses
+paths or its existing sentinel choices. Moving a directory creates a new
+installation ID.
+
+Records retain source, repository, revision, filename, format, backend, known
+file size and nullable metadata. `commit_hash` is populated only when the stored
+revision is a full 40-character hexadecimal commit. `created_at` is the first
+registration/import time, not a claim about when legacy weights were downloaded;
+`updated_at` changes with installation metadata. Missing installations retain
+their identity and last known facts, including size, while live download and
+inference states report missing files. GPU residency and runtime readiness are
+not persisted by this registry. File validation reports are stored separately
+and applied only while their fingerprints match.
+
+If the registry is damaged or has an unsupported schema version, the API reports
+an actionable error and leaves the file untouched. Restore a valid backup. If
+none is available, retain the damaged file under another name and request the
+model inventory again to rebuild recognized local records. Deterministic IDs
+are recovered from the same paths, but first-import dates, aliases no longer
+discoverable, and registrations outside the scan roots require the backup.
+
+## Structural validation and checksums
+
+Use `POST /api/v1/models/{registry_id}/validate` with
+`{"verify_checksum": false}` for structural checks, or `true` to also compute
+weight SHA-256 hashes and compare available `weights_manifest.json` expectations.
+These actions currently use the API; dedicated model action buttons are planned.
+The API never imports PyTorch or loads tensors.
+
+The readers follow the [safetensors format](https://github.com/huggingface/safetensors#format)
+and [GGUF specification](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md).
+They check bounded headers, duplicate keys, tensor shapes and byte ranges,
+truncation, overlaps and applicable alignment. The GGUF reader supports
+little-endian v2/v3 and F32/F16/BF16, Q4_0/Q4_1, Q5_0/Q5_1 and Q8_0/Q8_1
+tensor blocks. Other versions/encodings report **Needs validation**, not success.
+Native inference still expects `model.safetensors` in the installation root;
+other native layouts/shards need adapter integration in a later phase.
+
+Compatibility compares declared model/VAE architecture and required files.
+The audio.cpp package uses `general.architecture=audiocpp` plus
+`audiocpp.model_spec.family=yue2` in the main file; it is supported alongside
+YuE2 architecture metadata. Sidecar configs must declare YuE2 and its VAE, and
+the current bundled GGUF VAE must store F16 tensors. A different filename alone
+does not make a GGUF package incompatible. Native task admission checks the VAE
+independently and rejects mismatched declared latent widths.
+
+Reports live under `DATA_DIR/model-validations`. Inventory reuses a report only
+while file device/inode, size, modification/change times and the required-file
+list match. Changed complete installations require revalidation; corrupt or
+failed reports block task admission. Metadata now includes observed precision,
+quantization and `tensor_element_count`. Stored tensor elements include buffers
+or duplicated weights and are **not** presented as an exact parameter count.
+`parameter_count` remains unknown unless explicitly declared by model metadata.
+
+Computed hashes without expected hashes are recorded but do not set
+`checksum_verified=true`. Structural success does not verify weight values,
+guarantee runtime loading or establish VRAM capacity. Full hash verification
+can take time for large files; it runs only when requested. File fingerprints
+detect ordinary edits; they are not continuous cryptographic verification.
+
+## Confirmed model deletion
+
+Inspect `GET /api/v1/models/{registry_id}/deletion-preview` before deleting. It
+returns the exact directory/file list, estimated allocated disk space reclaimed,
+blockers and a confirmation token. `DELETE /api/v1/models/{registry_id}` requires
+both that token and `confirmed_path`. Changed files or paths require a new
+preview and confirmation. Dedicated UI confirmation is planned with the Models
+page; there is no automatic deletion on download or selection.
+
+Deletion refuses unfinished task references (including queued/cancel-requested
+work), in-use model/VAE files, overlapping registered installations, mounted
+files/directories and protected application data/config/runtime directories.
+Only installations within `YUE2_MODELS_DIR` can be deleted through this API;
+external installations require manual removal. Unreadable task/worker records
+block deletion rather than being silently skipped. Workers predating file
+leases must be stopped/unloaded when their heartbeat reports the model resident.
+
+New workers hold shared file leases for each job and for the lifetime of native
+model/VAE residency. Downloads hold an exclusive lease on their destination;
+validation uses a shared lease. Deletion requests fail promptly on lease
+conflicts, and coordinate with task admission through the existing queue lock.
+These advisory locks coordinate studio processes, not arbitrary external file
+edits.
+
+Confirmed deletion records a journal in the registry, renames the installation
+to a hidden sibling on the same filesystem and removes that directory. Partial
+and incomplete downloads inside it are included. Symlink targets and other hard
+links are preserved. Registry removal follows successful cleanup; failed or
+interrupted cleanup stays visible as `deleting` and cannot be used for inference.
+Inspect a fresh preview and retry to finish cleanup. Do not discard a registry
+backup while it contains deletion journals. Filesystem power-loss durability is
+subject to the existing Store/OS guarantees; this is not a transactional database.
+
 ## What gets downloaded
 
 | Repository | Role | Size |

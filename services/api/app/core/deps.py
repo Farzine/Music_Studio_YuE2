@@ -15,6 +15,7 @@ from app.services.budget import BudgetService
 from app.services.capabilities import CapabilityService
 from app.services.generations import GenerationService
 from app.services.model_downloads import ModelDownloads
+from app.services.models import ModelService
 from app.services.projects import ProjectService
 from app.services.system_info import SystemInfoService
 
@@ -42,12 +43,17 @@ def budget_provider() -> BudgetService:
 
 @lru_cache(maxsize=1)
 def capability_provider() -> CapabilityService:
-    return CapabilityService(settings_provider())
+    return CapabilityService(settings_provider(), store_provider())
 
 
 @lru_cache(maxsize=1)
 def model_downloads_provider() -> ModelDownloads:
     return ModelDownloads(settings_provider(), store_provider())
+
+
+@lru_cache(maxsize=1)
+def model_service_provider() -> ModelService:
+    return ModelService(capability_provider().registry)
 
 
 @lru_cache(maxsize=1)

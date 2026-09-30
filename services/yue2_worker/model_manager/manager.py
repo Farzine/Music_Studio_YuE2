@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from yue2_studio_core.errors import ErrorCode, StudioError
+from yue2_studio_core.model_metadata import describe_model_files, resolve_model_reference, resolve_vae_reference
+from yue2_studio_core.model_files import model_file_leases
 from yue2_studio_core.models import GenerationConfig
 from yue2_studio_core.settings import Settings
 
@@ -48,6 +50,7 @@ class ModelManager:
         self._key: PipelineKey | None = None
         self._loaded_at: float | None = None
         self._last_used: float | None = None
+        self._files_lease = None
 
     # -- device ------------------------------------------------------------ #
 
@@ -74,22 +77,10 @@ class ModelManager:
         ``DEFAULT_MODEL`` is a sentinel meaning "whatever .env configures", not
         a path; it must be resolved here rather than handed to the runtime.
         """
-        from yue2_studio_core.models import DEFAULT_MODEL
-
-        choice = config.model.checkpoint.strip()
-        if not choice or choice == DEFAULT_MODEL:
-            return self.settings.model_reference
-        return choice
+        return resolve_model_reference(config.model.checkpoint, self.settings)
 
     def resolve_vae(self, config: GenerationConfig) -> str:
-        from yue2_studio_core.models import DEFAULT_MODEL
-
-        choice = (config.model.vae or "").strip()
-        if not choice or choice in {"standard", DEFAULT_MODEL}:
-            return self.settings.vae_reference
-        if choice == "legacy":
-            return self.settings.vae_legacy_reference
-        return choice
+        return resolve_vae_reference(config.model.vae, self.settings)
 
     def key_for(self, config: GenerationConfig) -> PipelineKey:
         return PipelineKey(
@@ -111,27 +102,14 @@ class ModelManager:
 
     def verify_files(self, config: GenerationConfig) -> None:
         """Fail early with a precise reason instead of deep inside the runtime."""
-        for role, reference in (("model", self.resolve_model(config)), ("decoder", self.resolve_vae(config))):
+        for role, reference in (("model", self.resolve_model(config)), ("vae", self.resolve_vae(config))):
             path = Path(reference)
-            if path.is_absolute() or reference.startswith("."):
-                if not path.is_dir():
-                    raise StudioError(
-                        ErrorCode.MODEL_NOT_FOUND,
-                        f"The {role} directory {reference} does not exist.",
-                        stage="loading_model",
-                    )
-                if not (path / "config.json").is_file():
-                    raise StudioError(
-                        ErrorCode.MODEL_NOT_FOUND,
-                        f"The {role} directory {reference} has no config.json.",
-                        stage="loading_model",
-                    )
-                if not (path / "model.safetensors").is_file():
-                    raise StudioError(
-                        ErrorCode.MODEL_NOT_FOUND,
-                        f"The {role} directory {reference} has no model.safetensors.",
-                        stage="loading_model",
-                    )
+            if path.is_absolute() or reference.startswith(".") or path.is_dir():
+                entry = describe_model_files(reference, role)
+                if not entry.inference_ready:
+                    code = (ErrorCode.MODEL_NOT_FOUND if entry.inference_status == "files_missing" else
+                            ErrorCode.INVALID_CONFIG if entry.inference_status == "validation_failed" else ErrorCode.UNSUPPORTED_CAPABILITY)
+                    raise StudioError(code, f"The {role} at {reference} is unavailable: {entry.problem}", stage="loading_model")
             elif config.model.local_files_only:
                 raise StudioError(
                     ErrorCode.MODEL_NOT_FOUND,
@@ -172,9 +150,6 @@ class ModelManager:
 
     def acquire(self, config: GenerationConfig) -> tuple[Any, bool]:
         """Return a pipeline for this configuration and whether it was loaded now."""
-        from yue2 import YuE2Pipeline  # imported lazily: the API never needs it
-        from yue2.protocol import GenerationConfig as NativeGenerationConfig
-
         with self._lock:
             key = self.key_for(config)
             if self._pipeline is not None and self._key == key:
@@ -185,42 +160,56 @@ class ModelManager:
                 logger.info("releasing the resident pipeline: configuration changed")
                 self.release()
 
-            self.verify_files(config)
-            planner_sampling, semantic_sampling = self.native_sampling(config)
-            # ode_steps is a pipeline-level setting (synthesize() reads it from
-            # the pipeline), so it is part of PipelineKey. Sampling is not: it is
-            # supplied per call.
-            native_config = NativeGenerationConfig(
-                abc=planner_sampling,
-                semantic=semantic_sampling,
-                ode_steps=config.synthesis.ode_steps,
-            )
-            started = time.perf_counter()
+            lease = model_file_leases(self._store, [key.model, key.vae]) if self._store else None
+            if lease is not None:
+                lease.__enter__()
+                self._files_lease = lease
             try:
-                self._pipeline = YuE2Pipeline.from_pretrained(
-                    key.model,
-                    vae=key.vae,
-                    revision=key.revision,
-                    vae_revision=key.vae_revision,
-                    local_files_only=key.local_files_only,
-                    device=f"cuda:{key.device_index}",
-                    memory_budget_gib=key.memory_budget_gib,
-                    backend=key.backend,
-                    quantization=key.quantization,
-                    offload_ar=key.offload_ar,
-                    vae_core_frames=key.vae_core_frames,
-                    generation_config=native_config,
-                    progress=False,
-                )
-            except FileNotFoundError as exc:
-                raise StudioError(ErrorCode.MODEL_NOT_FOUND, str(exc), stage="loading_model") from exc
-            except Exception as exc:
-                raise StudioError(ErrorCode.MODEL_LOAD_FAILED, str(exc), stage="loading_model") from exc
-            self._key = key
-            self._loaded_at = time.time()
-            self._last_used = self._loaded_at
-            logger.info("pipeline ready in %.1fs", time.perf_counter() - started)
-            return self._pipeline, True
+                return self._load(config, key)
+            except BaseException:
+                self.release()
+                raise
+
+    def _load(self, config: GenerationConfig, key: PipelineKey) -> tuple[Any, bool]:
+        from yue2 import YuE2Pipeline
+        from yue2.protocol import GenerationConfig as NativeGenerationConfig
+
+        self.verify_files(config)
+        planner_sampling, semantic_sampling = self.native_sampling(config)
+        # ode_steps is a pipeline-level setting (synthesize() reads it from
+        # the pipeline), so it is part of PipelineKey. Sampling is not: it is
+        # supplied per call.
+        native_config = NativeGenerationConfig(
+            abc=planner_sampling,
+            semantic=semantic_sampling,
+            ode_steps=config.synthesis.ode_steps,
+        )
+        started = time.perf_counter()
+        try:
+            self._pipeline = YuE2Pipeline.from_pretrained(
+                key.model,
+                vae=key.vae,
+                revision=key.revision,
+                vae_revision=key.vae_revision,
+                local_files_only=key.local_files_only,
+                device=f"cuda:{key.device_index}",
+                memory_budget_gib=key.memory_budget_gib,
+                backend=key.backend,
+                quantization=key.quantization,
+                offload_ar=key.offload_ar,
+                vae_core_frames=key.vae_core_frames,
+                generation_config=native_config,
+                progress=False,
+            )
+        except FileNotFoundError as exc:
+            raise StudioError(ErrorCode.MODEL_NOT_FOUND, str(exc), stage="loading_model") from exc
+        except Exception as exc:
+            raise StudioError(ErrorCode.MODEL_LOAD_FAILED, str(exc), stage="loading_model") from exc
+        self._key = key
+        self._loaded_at = time.time()
+        self._last_used = self._loaded_at
+        logger.info("pipeline ready in %.1fs", time.perf_counter() - started)
+        return self._pipeline, True
 
     def release(self) -> None:
         with self._lock:
@@ -245,6 +234,9 @@ class ModelManager:
                         torch.cuda.ipc_collect()
                 except Exception:
                     logger.exception("clearing CUDA cache failed")
+            if self._files_lease is not None:
+                self._files_lease.__exit__(None, None, None)
+                self._files_lease = None
 
     def release_if_device_changed(self) -> bool:
         with self._lock:

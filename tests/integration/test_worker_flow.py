@@ -102,33 +102,24 @@ def test_the_score_is_stored_validated_and_editable(api_client, sample_config):
 
 
 def test_progress_is_recorded_stage_by_stage_without_invented_percentages(
-    api_client, sample_config, data_dir
+    api_client, sample_config, data_dir, monkeypatch
 ):
     job_id = api_client.post("/api/v1/generations", json={"config": sample_config}).json()["generation"]["id"]
 
     observed: list[tuple[str, str, float | None, str | None]] = []
-    stop = threading.Event()
+    save_job = Store.save_job
 
-    def watch() -> None:
-        store = Store()
-        while not stop.is_set():
-            try:
-                job = store.get_job(job_id)
-            except Exception:
-                time.sleep(0.02)
-                continue
+    def record_saved_progress(store, job):
+        saved = save_job(store, job)
+        # Polling can miss brief stages; observe actual successful writes.
+        if job.id == job_id:
             entry = (job.status.value, job.progress.stage, job.progress.percent, job.progress.unit)
             if not observed or observed[-1] != entry:
                 observed.append(entry)
-            if job.status.is_terminal:
-                return
-            time.sleep(0.02)
+        return saved
 
-    watcher = threading.Thread(target=watch, daemon=True)
-    watcher.start()
+    monkeypatch.setattr(Store, "save_job", record_saved_progress)
     run_worker_once()
-    watcher.join(timeout=5)  # the watcher exits by itself once the job is terminal
-    stop.set()
 
     statuses = [entry[0] for entry in observed]
     for expected in ("PLANNING", "GENERATING", "DECODING", "POST_PROCESSING", "COMPLETED"):

@@ -1,4 +1,4 @@
-"""Small Hugging Face download registry shared by API restarts."""
+"""Persistent Hugging Face download jobs, registering completed installations."""
 from __future__ import annotations
 
 import hashlib
@@ -13,17 +13,13 @@ from huggingface_hub import HfApi, hf_hub_download
 from huggingface_hub.utils import HFValidationError, validate_repo_id
 from yue2_studio_core.errors import ValidationError
 from yue2_studio_core.ids import new_id
+from yue2_studio_core.model_metadata import GGUF_COMPANIONS as _GGUF_COMPANIONS
+from yue2_studio_core.model_registry import ModelRegistry
+from yue2_studio_core.model_files import model_file_leases
 from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store, write_json_atomic
 
 _LOCK = threading.Lock()
-_GGUF_COMPANIONS = (
-    "yue2-vae-f16.gguf",
-    "sidecars/yue2-model-config.json",
-    "sidecars/yue2-generation-config.json",
-    "sidecars/yue2-qwen.tiktoken",
-    "sidecars/yue2-vae-config.json",
-)
 _NATIVE_COMPANIONS = (
     "config.json", "generation_config.json", "yue2_generation_config.json",
     "weights_manifest.json", "qwen.tiktoken", "modeling_yue2.py",
@@ -47,6 +43,7 @@ class ModelDownloads:
     def __init__(self, settings: Settings, store: Store) -> None:
         self.settings = settings
         self.store = store
+        self.registry = ModelRegistry(settings, store)
         self.root = store.root / "model-downloads"
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -119,14 +116,16 @@ class ModelDownloads:
                 raise ValueError("Not enough free disk space for this model and 1 GiB of headroom.")
             job.update(revision=info.sha, total_files=len(files))
             write_json_atomic(path, job)
-            for name in files:
-                job["current_file"] = name
-                write_json_atomic(path, job)
-                hf_hub_download(repo_id, name, revision=info.sha, local_dir=destination)
-                job["completed_files"] += 1
-                write_json_atomic(path, job)
-            metadata = {"repo_id": repo_id, "revision": info.sha, "filename": filename}
-            write_json_atomic(destination / "studio-model.json", metadata)
+            with model_file_leases(self.store, [str(destination)], shared=False, blocking=False):
+                for name in files:
+                    job["current_file"] = name
+                    write_json_atomic(path, job)
+                    hf_hub_download(repo_id, name, revision=info.sha, local_dir=destination)
+                    job["completed_files"] += 1
+                    write_json_atomic(path, job)
+                metadata = {"repo_id": repo_id, "revision": info.sha, "filename": filename}
+                write_json_atomic(destination / "studio-model.json", metadata)
+                self.registry.register(str(destination))
             job.update(status="complete", path=str(destination), current_file=None)
         except Exception as exc:
             job.update(status="failed", error=str(exc), current_file=None)

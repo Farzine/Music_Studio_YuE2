@@ -6,6 +6,7 @@ import json
 import threading
 
 import numpy as np
+import pytest
 import soundfile as sf
 
 from yue2_studio_core.ids import new_id
@@ -17,7 +18,8 @@ from services.yue2_worker.adapters.audiocpp import AudioCppBackend
 from services.yue2_worker.adapters.base import GenerationContext
 
 
-def test_gguf_cli_uses_selected_gpu_and_returns_score_and_audio(tmp_path):
+@pytest.mark.parametrize("checkpoint_choice", ["explicit", "default"])
+def test_gguf_cli_uses_selected_gpu_and_returns_score_and_audio(tmp_path, checkpoint_choice):
     model = tmp_path / "model"
     model.mkdir()
     for name in ("yue2-3b-q8_0.gguf", "yue2-vae-f16.gguf"):
@@ -31,22 +33,25 @@ def test_gguf_cli_uses_selected_gpu_and_returns_score_and_audio(tmp_path):
         'while [[ $# -gt 0 ]]; do\n'
         '  case "$1" in\n'
         '    --device) device="$2"; shift 2;;\n'
+        '    --model) model="$2"; shift 2;;\n'
         '    --out) out="$2"; shift 2;;\n'
         '    --out-dir) dir="$2"; shift 2;;\n'
         '    *) shift;;\n'
         '  esac\n'
         'done\n'
         'printf "%s" "$device" > "$dir/device.txt"\n'
+        'printf "%s" "$model" > "$dir/model.txt"\n'
         f'cp "{source}" "$out"\n'
         'printf "X:1\\nT:Test\\nM:4/4\\nK:C\\nCDEF|" > "$dir/score.abc"\n'
         'printf "[1,2,3]" > "$dir/semantic.json"\n',
         encoding="utf-8",
     )
     cli.chmod(0o755)
-    settings = Settings(data_dir=str(tmp_path / "data"), audiocpp_cli_path=str(cli))
+    settings = Settings(data_dir=str(tmp_path / "data"), audiocpp_cli_path=str(cli), yue2_model_path=str(model))
     store = Store(settings)
     store.write_runtime_settings({"device_index": 2})
-    config = GenerationConfig.model_validate({"model": {"checkpoint": str(model)}, "prompt": {"style": "pop", "lyrics": "hello"}})
+    checkpoint = "default" if checkpoint_choice == "default" else str(model)
+    config = GenerationConfig.model_validate({"model": {"checkpoint": checkpoint}, "prompt": {"style": "pop", "lyrics": "hello"}})
     job = GenerationJob(id=new_id("job"), project_id=new_id("prj"), config=config)
     store.save_job(job)
     store.prepare_generation_dir(job.project_id, job.id)
@@ -74,3 +79,5 @@ def test_gguf_cli_uses_selected_gpu_and_returns_score_and_audio(tmp_path):
     assert result.runtime["backend"] == "audiocpp"
     assert json.loads((store.generation_dir(job.project_id, job.id) / "audiocpp/semantic.json").read_text()) == [1, 2, 3]
     assert (store.generation_dir(job.project_id, job.id) / "audiocpp/device.txt").read_text() == "2"
+    assert (store.generation_dir(job.project_id, job.id) / "audiocpp/model.txt").read_text() == str(model)
+    assert result.effective_config["model"]["checkpoint"] == checkpoint

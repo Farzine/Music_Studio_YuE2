@@ -10,6 +10,7 @@ from pathlib import Path
 from yue2_studio_core.abc import score_duration_seconds
 from yue2_studio_core.budget import BudgetEstimate, ModelLimits, estimate_budget, load_model_limits
 from yue2_studio_core.models import GenerationConfig, GenerationMode
+from yue2_studio_core.model_metadata import resolve_model_reference
 from yue2_studio_core.settings import Settings
 
 
@@ -18,11 +19,7 @@ class BudgetService:
         self.settings = settings
 
     def _model_dir(self, config: GenerationConfig | None) -> str | None:
-        from yue2_studio_core.models import DEFAULT_MODEL
-
-        reference = self.settings.model_reference
-        if config is not None and config.model.checkpoint not in {DEFAULT_MODEL, ""}:
-            reference = config.model.checkpoint
+        reference = resolve_model_reference(config.model.checkpoint if config else "default", self.settings)
         path = Path(reference)
         return str(path) if path.is_dir() else None
 

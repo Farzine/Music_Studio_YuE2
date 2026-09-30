@@ -56,14 +56,25 @@ export default function SettingsPage() {
               key={model.id}
               className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] p-3"
             >
-              <Badge tone={model.present ? "accent" : "warn"}>{model.present ? "present" : "missing"}</Badge>
+              <Badge tone={model.download_status === "downloaded" ? "accent" : "warn"}>
+                {model.download_status === "downloaded" ? "Downloaded" : model.download_status === "unknown" ? "Files unknown" : "Weights missing"}
+              </Badge>
+              <Badge tone={model.inference_ready ? "accent" : "warn"}>
+                {model.inference_ready ? "Available for inference" : "Inference unavailable"}
+              </Badge>
               <span className="text-sm">{model.label}</span>
               <span className="min-w-0 break-all font-mono text-xs text-[var(--color-ink-faint)]">{model.id}</span>
               {model.bytes ? (
                 <span className="ml-auto text-xs text-[var(--color-ink-faint)]">{formatBytes(model.bytes)}</span>
               ) : null}
+              {model.problem ? (
+                <p className="w-full text-xs text-[var(--color-warn)]">{model.problem}</p>
+              ) : null}
             </div>
           ))}
+          <p className="text-xs text-[var(--color-ink-faint)]">
+            Availability checks file and runtime prerequisites. Model content and GPU memory have not been validated.
+          </p>
         </CardContent>
       </Card>
 
