@@ -67,6 +67,8 @@ export function CreateForm({
   const duration = (getPath(effective, "sampling.max_duration_seconds") as number) ?? 360;
   const decoderMode = (getPath(effective, "decoder.mode") as string) ?? "tiled";
   const budget = (getPath(effective, "model.memory_budget_gib") as number) ?? 40;
+  const selectedModel = (getPath(effective, "model.checkpoint") as string) ?? "default";
+  const gguf = capabilities?.models.find((item) => item.id === selectedModel)?.format === "gguf";
 
   // Live token budget for exactly what would be submitted. The backend counts
   // with the checkpoint's own tokenizer, so the figures are the model's, not a
@@ -111,6 +113,7 @@ export function CreateForm({
     style.trim().length > 0 &&
     (!needsLyrics || lyrics.trim().length > 0) &&
     (!needsReference || Boolean(reference)) &&
+    !(gguf && mode === "cover") &&
     !overBudget;
 
   const blocker = !style.trim()
@@ -119,6 +122,8 @@ export function CreateForm({
       ? "Add lyrics, or switch to Direct Audio."
       : needsReference && !reference
         ? "Upload the recording you want to cover."
+        : gguf && mode === "cover"
+          ? "GGUF models do not support the cover transcription workflow. Choose another mode."
         : overBudget
           ? "This request does not fit the model's context window. Adjust it above."
           : null;
@@ -206,6 +211,7 @@ export function CreateForm({
             reference={reference}
             onReferenceChange={setReference}
             onChange={update}
+            gguf={gguf}
           />
 
           {estimate ? (
@@ -216,7 +222,7 @@ export function CreateForm({
             />
           ) : null}
 
-          {vramWarning ? <WarningNotice>{vramWarning}</WarningNotice> : null}
+          {!gguf && vramWarning ? <WarningNotice>{vramWarning}</WarningNotice> : null}
           {error ? (
             <ErrorNotice
               title={error.code.replace(/_/g, " ").toLowerCase()}
@@ -281,6 +287,7 @@ export function CreateForm({
             schema={schema}
             config={effective}
             defaults={defaults}
+            gguf={gguf}
             onChange={(next) => {
               setConfig(next);
               setActivePreset(null);

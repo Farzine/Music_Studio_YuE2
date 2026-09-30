@@ -18,8 +18,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-line)] bg-[var(--color-surface)] p-6 sm:p-8">
-        <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-ink-faint)]">Local-first</p>
+      <section className="relative overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-line)] bg-[linear-gradient(135deg,var(--color-surface-2),var(--color-surface)_60%)] p-6 shadow-[var(--shadow-md)] sm:p-9">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--color-accent)]">Your local music workspace</p>
         <h1 className="text-balance-tight mt-2 max-w-2xl text-2xl font-semibold leading-tight tracking-tight sm:text-3xl lg:text-4xl">
           Make a whole song from a style and a few lines.
         </h1>

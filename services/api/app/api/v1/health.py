@@ -18,7 +18,9 @@ def health(
 ) -> dict:
     probe = capabilities.runtime_probe()
     worker = system.worker_state()
-    ready = probe["model_present"] and probe["vae_present"] and worker["online"]
+    gguf_ready = any(model["role"] == "model" and model["format"] == "gguf" and model["present"]
+                     for model in capabilities.local_models())
+    ready = worker["online"] and ((probe["model_present"] and probe["vae_present"]) or gguf_ready)
     return {
         "status": "ok",
         "ready": ready,

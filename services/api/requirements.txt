@@ -7,5 +7,6 @@ python-multipart==0.0.20
 nvidia-ml-py==13.580.82
 soundfile==0.13.1
 httpx==0.28.1
+huggingface-hub==0.36.2
 sse-starlette==3.0.2
 tiktoken==0.12.0

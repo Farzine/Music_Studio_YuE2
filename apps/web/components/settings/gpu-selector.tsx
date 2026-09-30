@@ -30,8 +30,8 @@ function Meter({ device }: { device: GpuDevice }) {
  *
  * The list comes from the worker itself, because CUDA_VISIBLE_DEVICES can hide
  * devices from it that the API still sees — offering an index the worker
- * cannot address would not be a real choice. A change applies to the next job;
- * a run already in flight finishes where it started.
+ * cannot address would not be a real choice. Idle weights are unloaded when
+ * the selection changes; a running job finishes on its original card.
  */
 export function GpuSelector() {
   const { data, isLoading } = useGpus();
@@ -55,8 +55,8 @@ export function GpuSelector() {
       {data.note ? <WarningNotice>{data.note}</WarningNotice> : null}
       {data.pending_restart ? (
         <WarningNotice>
-          The worker is still using GPU {data.active_index}. It moves to GPU {data.selected_index} on its next
-          job; the model is reloaded then, which takes a few seconds.
+          GPU {data.active_index} is finishing its current work. The model will be unloaded there and the next
+          generation will load on GPU {data.selected_index}.
         </WarningNotice>
       ) : null}
 

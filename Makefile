@@ -8,7 +8,7 @@ WORKER_VENV := $(ROOT)/.venv-yue2
 WEB         := $(ROOT)/apps/web
 
 .DEFAULT_GOAL := help
-.PHONY: help install install-api install-worker install-web models env \
+.PHONY: help install install-api install-worker install-web install-audiocpp models env \
         dev backend worker frontend test test-unit test-integration test-worker mapping cover \
         smoke-test lint format typecheck backfill-versions clean-data stop
 
@@ -26,6 +26,9 @@ install-api: ## Build .venv-api (FastAPI; no torch)
 
 install-worker: ## Build .venv-yue2 (torch 2.10 cu126 + yue2-infer)
 	./scripts/setup_yue2_env.sh
+
+install-audiocpp: ## Build the optional CUDA GGUF inference CLI
+	./scripts/setup_audiocpp.sh
 
 install-web: ## Install frontend dependencies
 	cd $(WEB) && npm install

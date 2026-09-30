@@ -22,6 +22,13 @@ const PRIMARY = new Set([
   "sampling.max_duration_seconds",
 ]);
 
+const GGUF_UNSUPPORTED = new Set([
+  "model.revision", "model.vae", "model.vae_revision", "model.compute_backend",
+  "model.quantization", "model.offload_ar", "model.memory_budget_gib",
+  "model.local_files_only", "decoder.mode", "decoder.tile_frames",
+  "decoder.halo_frames", "sampling.fit_to_plan", "planner.seed",
+]);
+
 /**
  * Advanced settings, grouped and rendered entirely from the backend schema.
  *
@@ -34,12 +41,14 @@ export function AdvancedSettings({
   defaults,
   onChange,
   loading,
+  gguf = false,
 }: {
   schema: GenerationSchema;
   config: ConfigObject;
   defaults: ConfigObject;
   onChange: (next: ConfigObject) => void;
   loading?: boolean;
+  gguf?: boolean;
 }) {
   const groups = React.useMemo(
     () =>
@@ -47,12 +56,14 @@ export function AdvancedSettings({
         .sort((a, b) => a.order - b.order)
         .map((group) => ({
           ...group,
-          parameters: schema.parameters.filter(
-            (parameter) => parameter.group === group.key && !PRIMARY.has(parameter.key),
-          ),
+          parameters: schema.parameters
+            .filter((parameter) => parameter.group === group.key && !PRIMARY.has(parameter.key))
+            .map((parameter) => gguf && GGUF_UNSUPPORTED.has(parameter.key)
+              ? { ...parameter, enabled: false, disabled_reason: "The selected GGUF model uses audio.cpp and does not support this setting." }
+              : parameter),
         }))
         .filter((group) => group.parameters.length > 0),
-    [schema],
+    [schema, gguf],
   );
 
   const changed = React.useMemo(() => new Set(changedPaths(defaults, config)), [defaults, config]);

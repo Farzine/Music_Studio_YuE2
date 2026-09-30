@@ -8,29 +8,29 @@
    it everywhere, which is what keeps the pages looking like one product.
    =========================================================================== */
 @theme {
-  /* --- Surfaces: a dark studio palette with four clear depth levels ------ */
-  --color-canvas: oklch(0.155 0.011 268);
-  --color-surface: oklch(0.196 0.013 268);
-  --color-surface-2: oklch(0.238 0.015 268);
-  --color-surface-3: oklch(0.283 0.017 268);
-  --color-overlay: oklch(0.12 0.01 268 / 0.72);
+  /* --- Quiet navy surfaces, with one clear accent ----------------------- */
+  --color-canvas: oklch(0.145 0.018 255);
+  --color-surface: oklch(0.195 0.019 255);
+  --color-surface-2: oklch(0.245 0.022 255);
+  --color-surface-3: oklch(0.295 0.024 255);
+  --color-overlay: oklch(0.10 0.018 255 / 0.76);
 
   /* --- Lines ------------------------------------------------------------- */
-  --color-line: oklch(0.31 0.016 268);
-  --color-line-strong: oklch(0.4 0.02 268);
+  --color-line: oklch(0.32 0.022 255);
+  --color-line-strong: oklch(0.44 0.026 255);
 
   /* --- Text: three weights, used consistently ---------------------------- */
-  --color-ink: oklch(0.975 0.004 268);
-  --color-ink-muted: oklch(0.755 0.014 268);
-  --color-ink-faint: oklch(0.6 0.015 268);
+  --color-ink: oklch(0.975 0.006 255);
+  --color-ink-muted: oklch(0.79 0.015 255);
+  --color-ink-faint: oklch(0.65 0.017 255);
 
   /* --- Accent and status ------------------------------------------------- */
-  --color-accent: oklch(0.76 0.158 158);
-  --color-accent-strong: oklch(0.82 0.165 158);
-  --color-accent-ink: oklch(0.19 0.04 158);
-  --color-accent-soft: oklch(0.76 0.158 158 / 0.14);
+  --color-accent: oklch(0.78 0.12 205);
+  --color-accent-strong: oklch(0.84 0.12 205);
+  --color-accent-ink: oklch(0.17 0.035 255);
+  --color-accent-soft: oklch(0.78 0.12 205 / 0.13);
 
-  --color-success: oklch(0.76 0.158 158);
+  --color-success: oklch(0.77 0.135 155);
   --color-warn: oklch(0.81 0.143 80);
   --color-warn-soft: oklch(0.81 0.143 80 / 0.14);
   --color-danger: oklch(0.68 0.19 20);
@@ -42,8 +42,8 @@
   --radius-xs: 0.375rem;
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.25rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
   --radius-full: 999px;
 
   /* --- Elevation: low contrast, used sparingly --------------------------- */
@@ -82,13 +82,21 @@ html {
 }
 
 body {
-  background: var(--color-canvas);
+  background: radial-gradient(ellipse 65rem 32rem at 82% -12%, oklch(0.23 0.045 235 / 0.25), transparent 70%), var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   /* Nothing should ever scroll sideways. */
   overflow-x: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 :focus-visible {

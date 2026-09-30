@@ -10,7 +10,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-[var(--radius-lg)] border border-[var(--color-line)] bg-[var(--color-surface)]",
+        "rounded-[var(--radius-lg)] border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[var(--shadow-sm)]",
         interactive &&
           "transition-[border-color,background-color] duration-[var(--duration-base)] hover:border-[var(--color-line-strong)] hover:bg-[var(--color-surface-2)]",
         className,

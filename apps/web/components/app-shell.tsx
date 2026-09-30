@@ -81,7 +81,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius-md)] bg-[var(--color-accent)] text-[var(--color-accent-ink)]">
               <Disc3 className="h-5 w-5" />
             </span>
-            <span className="hidden text-sm font-semibold tracking-tight sm:block">YuE2 Music Studio</span>
+            <span className="hidden text-sm font-semibold tracking-tight sm:block">YuE2 <span className="text-[var(--color-ink-muted)]">Music Studio</span></span>
           </Link>
 
           <div className="ml-auto flex items-center gap-2">
@@ -98,7 +98,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="mx-auto flex max-w-[1800px]">
         {/* Desktop sidebar. */}
-        <aside className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-[var(--sidebar-width)] shrink-0 border-r border-[var(--color-line)] px-3 py-5 lg:block">
+        <aside className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-[var(--sidebar-width)] shrink-0 border-r border-[var(--color-line)] bg-[color-mix(in_oklch,var(--color-surface)_35%,transparent)] px-3 py-5 lg:block">
           <Button variant="primary" className="mb-4 w-full" asChild>
             <Link href="/create">
               <Sparkles className="h-4 w-4" />
@@ -150,7 +150,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         <main
-          className="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6"
+          className="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-7 xl:px-9"
           style={{
             // Room for the mobile nav and the player, whichever are showing.
             paddingBottom: `calc(1.5rem + var(--mobile-nav-height) + ${track ? "var(--player-height)" : "0px"} + env(safe-area-inset-bottom))`,

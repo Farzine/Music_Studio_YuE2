@@ -1,5 +1,34 @@
 # Models
 
+## Download from the studio
+
+Open **Settings → Music models**, enter a Hugging Face repository ID such as
+`audio-cpp/Yue2-3B-GGUF`, and browse its model files. You can also enter a
+filename and branch or commit directly. The studio downloads the chosen file
+plus the YuE2 files it needs, then offers **Use for a song**. Arbitrary files
+can be downloaded, but only complete YuE2 safetensors checkpoints and supported
+YuE2 GGUF packages are enabled for inference.
+
+For GGUF inference on NVIDIA CUDA, build the optional audio.cpp CLI:
+
+```bash
+make install-audiocpp
+```
+
+The build is pinned to audio.cpp `v0.8.2` and needs CMake, a C++ compiler, and
+the CUDA toolkit. If you already have a compatible CLI, set
+`AUDIOCPP_CLI_PATH=/absolute/path/to/audiocpp_cli` in `.env` and restart the
+worker. A GGUF job runs the CLI on the GPU selected on the System page. The
+process exits after the job, releasing its GPU allocation. The native PyTorch
+model remains available for other jobs and is unloaded before a GGUF job.
+
+The System page compares the selected GPU's available memory with [published
+YuE2 GGUF longform peak measurements](https://huggingface.co/audio-cpp/Yue2-3B-GGUF)
+plus headroom. The result is a conservative
+estimate, not a guarantee for every song length or GPU. It reports the largest
+verified variant and its 3B parameter count; it does not estimate capacity for
+unrelated model families.
+
 ## What gets downloaded
 
 | Repository | Role | Size |

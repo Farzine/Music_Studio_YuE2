@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import shutil
 import subprocess
 from functools import lru_cache
@@ -68,6 +69,34 @@ class CapabilityService:
     def _describe_model(reference: str, role: str, *, is_default: bool = False) -> dict[str, Any]:
         path = Path(reference)
         present = path.is_dir()
+        metadata_path = path / "studio-model.json"
+        metadata = {}
+        if metadata_path.is_file():
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
+        gguf = str(metadata.get("filename", "")).endswith(".gguf")
+        if gguf:
+            main = path / metadata["filename"]
+            companions = (
+                "yue2-vae-f16.gguf", "sidecars/yue2-model-config.json",
+                "sidecars/yue2-generation-config.json", "sidecars/yue2-qwen.tiktoken",
+                "sidecars/yue2-vae-config.json",
+            )
+            missing = [name for name in companions if not (path / name).is_file()]
+            problem = None if main.is_file() and not missing else "Missing YuE2 GGUF companion files: " + ", ".join(missing)
+            if not main.is_file():
+                problem = f"The selected file {metadata['filename']} is missing."
+            elif not main.name.lower().startswith("yue2-3b-"):
+                problem = "This GGUF file is not a supported YuE2 main model."
+            return {
+                "id": reference, "role": role, "label": f"{metadata.get('repo_id', path.name)} · {main.name}",
+                "path": reference, "present": problem is None, "is_local": True,
+                "is_default": is_default, "bytes": main.stat().st_size if main.is_file() else None,
+                "problem": problem, "format": "gguf", "filename": metadata["filename"],
+                "revision": metadata.get("revision"),
+            }
         weights = path / "model.safetensors"
         config = path / "config.json"
         complete = present and weights.is_file() and config.is_file()
@@ -88,6 +117,7 @@ class CapabilityService:
             "is_default": is_default,
             "bytes": weights.stat().st_size if weights.is_file() else None,
             "problem": problem,
+            "format": "safetensors",
         }
 
     def local_models(self) -> list[dict[str, Any]]:
@@ -111,11 +141,24 @@ class CapabilityService:
 
         # Any sibling directory that looks like a model is offered too, so a
         # second checkpoint can be dropped in without editing configuration.
-        model_root = Path(self.settings.model_reference).parent
-        if model_root.is_dir():
-            for directory in sorted(model_root.iterdir()):
+        roots = {self.settings.models_path}
+        configured = Path(self.settings.model_reference)
+        if configured.is_dir():
+            roots.add(configured.parent)
+        directories = []
+        for root in roots:
+            if root.is_dir():
+                directories += list(root.iterdir())
+                if (root / "hub").is_dir():
+                    directories += list((root / "hub").iterdir())
+        if directories:
+            for directory in sorted(set(directories)):
                 reference = str(directory)
                 if reference in seen or not directory.is_dir():
+                    continue
+                if (directory / "studio-model.json").is_file():
+                    seen.add(reference)
+                    entries.append(self._describe_model(reference, "model"))
                     continue
                 if not (directory / "config.json").is_file():
                     continue
@@ -128,6 +171,12 @@ class CapabilityService:
                     continue
                 seen.add(reference)
                 entries.append(self._describe_model(reference, "model" if kind == "yue2" else "vae"))
+        cli = self.settings.audiocpp_executable
+        if not (shutil.which(cli) or (Path(cli).is_file() and os.access(cli, os.X_OK))):
+            for entry in entries:
+                if entry["format"] == "gguf" and entry["present"]:
+                    entry["present"] = False
+                    entry["problem"] = "audio.cpp CLI is not installed. Run make install-audiocpp."
         return entries
 
     def resolve_model_choice(self, checkpoint: str) -> dict[str, Any] | None:
@@ -281,6 +330,7 @@ class CapabilityService:
                 "path": default["path"],
                 "is_default": True,
                 "help": "Uses the model configured in .env.",
+                "format": default["format"],
             }
         ]
         for entry in capabilities["models"]:
@@ -296,6 +346,7 @@ class CapabilityService:
                     "bytes": entry["bytes"],
                     "path": entry["path"],
                     "is_default": False,
+                    "format": entry["format"],
                 }
             )
         return describe_registry(copy.deepcopy(capabilities), {"models": options})

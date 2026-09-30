@@ -18,6 +18,15 @@ from yue2_studio_core.store import Store
 
 HEARTBEAT_STALE_AFTER = timedelta(seconds=30)
 
+# Published longform peak VRAM on an RTX 5090; leave 20% or 1 GiB of
+# headroom, whichever is larger. ponytail: benchmark-based estimate; replace
+# with per-device observed peaks when enough real runs have been collected.
+GGUF_VARIANTS = (
+    ("Q4_0", "yue2-3b-q4_0.gguf", 2_665_632_320, 7_755),
+    ("Q8_0", "yue2-3b-q8_0.gguf", 4_264_186_432, 8_867),
+    ("BF16", "yue2-3b-bf16.gguf", 7_261_475_392, 12_535),
+)
+
 
 def _gpus() -> tuple[list[dict], str | None, str | None]:
     try:
@@ -181,6 +190,32 @@ class SystemInfoService:
                 else None
             ),
         }
+
+    def model_recommendation(self) -> dict:
+        inventory = self.devices()
+        selected = next((item for item in inventory["devices"] if item["index"] == inventory["selected_index"]), None)
+        if not selected or not selected.get("memory_total_bytes"):
+            return {"device_index": inventory["selected_index"], "available_bytes": None,
+                    "variants": [], "recommended": None, "max_model_bytes": None,
+                    "max_parameters": None, "note": "GPU memory is unavailable; a recommendation cannot be calculated."}
+        worker_pids = {entry.get("pid") for entry in self.worker_state()["workers"]}
+        own_bytes = sum(p["used_bytes"] for p in selected.get("processes", []) if p["pid"] in worker_pids)
+        available = int(selected["memory_free_bytes"] or 0) + own_bytes
+        variants = []
+        for label, filename, size, peak_mib in GGUF_VARIANTS:
+            peak = peak_mib * 1024**2
+            required = int(max(peak * 1.2, peak + 1024**3))
+            variants.append({
+                "label": label, "repo_id": "audio-cpp/Yue2-3B-GGUF", "filename": filename,
+                "model_bytes": size, "parameters": 3_000_000_000, "peak_bytes": peak,
+                "required_bytes": required, "runnable": available >= required,
+            })
+        recommended = next((item for item in reversed(variants) if item["runnable"]), None)
+        return {"device_index": selected["index"], "available_bytes": available,
+                "variants": variants, "recommended": recommended,
+                "max_model_bytes": recommended["model_bytes"] if recommended else None,
+                "max_parameters": recommended["parameters"] if recommended else None,
+                "note": "Conservative estimates from one published RTX 5090 longform benchmark; actual use varies with song length and other GPU workloads."}
 
     def info(self) -> dict:
         devices, driver, gpu_error = _gpus()

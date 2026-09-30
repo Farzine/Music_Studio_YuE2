@@ -31,6 +31,11 @@ def gpus(system: SystemInfoService = Depends(system_info_provider)) -> dict:
     return system.devices()
 
 
+@router.get("/model-recommendation")
+def model_recommendation(system: SystemInfoService = Depends(system_info_provider)) -> dict:
+    return system.model_recommendation()
+
+
 @router.put("/device")
 def select_device(
     payload: DeviceSelection,

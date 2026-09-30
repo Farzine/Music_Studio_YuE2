@@ -2,6 +2,13 @@
 
 Base URL `http://127.0.0.1:8000`. Interactive documentation at `/docs`.
 
+## Model setup
+
+- `GET /api/v1/system/model-recommendation` ranks supported YuE2 GGUF variants for the selected GPU.
+- `GET /api/v1/models/hub?repo_id=owner/name&revision=main` lists remote GGUF and safetensors files.
+- `POST /api/v1/models/downloads` accepts `{ "repo_id": "owner/name", "filename": "file.gguf", "revision": "main" }` and returns a download ID.
+- `GET /api/v1/models/downloads` and `GET /api/v1/models/downloads/{id}` report file progress, completion, and failures. Completed compatible models appear in the existing model inventory and generation schema.
+
 Every error uses the same envelope:
 
 ```json

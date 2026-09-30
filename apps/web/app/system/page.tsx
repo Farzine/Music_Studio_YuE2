@@ -1,13 +1,15 @@
 "use client";
 
 import { Cpu, HardDrive, Server } from "lucide-react";
+import Link from "next/link";
 import * as React from "react";
 
 import { GpuSelector } from "@/components/settings/gpu-selector";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorNotice, Skeleton, WarningNotice } from "@/components/ui/feedback";
-import { useCapabilities, useSystemInfo } from "@/hooks/use-queries";
+import { useCapabilities, useModelRecommendation, useSystemInfo } from "@/hooks/use-queries";
 import { cn } from "@/lib/cn";
 import { formatBytes } from "@/lib/format";
 
@@ -23,6 +25,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 export default function SystemPage() {
   const { data, isLoading } = useSystemInfo();
   const { data: capabilities } = useCapabilities();
+  const { data: recommendation } = useModelRecommendation();
 
   if (isLoading || !data) {
     return (
@@ -60,12 +63,38 @@ export default function SystemPage() {
             Graphics processor
           </CardTitle>
           <CardDescription>
-            Choose which card runs the model. The change applies to the next generation; a run already in
-            progress finishes on the card it started on.
+            Choose which card runs the model. Idle weights are released when you switch; a run in progress
+            finishes on its original card before the next generation loads on the new one.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <GpuSelector />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recommended music model</CardTitle>
+          <CardDescription>Based on available memory on GPU {recommendation?.device_index ?? "—"}, with headroom for generation.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {recommendation?.recommended ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] bg-[var(--color-accent-soft)] p-4">
+              <Badge tone="accent">best fit</Badge>
+              <span className="font-semibold">YuE2 3B · {recommendation.recommended.label}</span>
+              <span className="text-sm text-[var(--color-ink-muted)]">{formatBytes(recommendation.max_model_bytes ?? 0)} model file · up to 3B parameters among verified variants</span>
+            </div>
+          ) : <p className="text-sm text-[var(--color-ink-muted)]">No verified YuE2 variant fits the available GPU memory with the recommended headroom.</p>}
+          <div className="grid gap-2 sm:grid-cols-3">
+            {(recommendation?.variants ?? []).map((variant) => (
+              <div key={variant.filename} className="rounded-[var(--radius-md)] border border-[var(--color-line)] p-3">
+                <div className="flex items-center justify-between gap-2"><strong className="text-sm">{variant.label}</strong><Badge tone={variant.runnable ? "accent" : "neutral"}>{variant.runnable ? "runnable" : "too large"}</Badge></div>
+                <p className="mt-2 text-xs text-[var(--color-ink-muted)]">{formatBytes(variant.model_bytes)} model · {formatBytes(variant.required_bytes)} recommended free VRAM</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-[var(--color-ink-faint)]">{recommendation?.note}</p>
+          <Button variant="surface" size="sm" asChild><Link href="/settings">Browse and download models</Link></Button>
         </CardContent>
       </Card>
 

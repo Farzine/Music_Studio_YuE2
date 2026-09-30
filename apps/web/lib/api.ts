@@ -6,6 +6,8 @@ import type {
   GenerationJob,
   GpuInventory,
   GenerationSchema,
+  ModelDownload,
+  ModelRecommendation,
   Preset,
   ProjectConfigResponse,
   ProjectDeleteReport,
@@ -67,6 +69,16 @@ export const api = {
   health: () => request<{ status: string; ready: boolean; worker_online: boolean; backend: string }>("/api/v1/health"),
   systemInfo: () => request<SystemInfo>("/api/v1/system/info"),
   gpus: () => request<GpuInventory>("/api/v1/system/gpus"),
+  modelRecommendation: () => request<ModelRecommendation>("/api/v1/system/model-recommendation"),
+  browseModelRepo: (repoId: string, revision?: string) =>
+    request<{ repo_id: string; revision: string; files: { name: string; bytes: number | null }[] }>(
+      `/api/v1/models/hub?${new URLSearchParams({ repo_id: repoId, ...(revision ? { revision } : {}) })}`,
+    ),
+  modelDownloads: () => request<{ items: ModelDownload[] }>("/api/v1/models/downloads"),
+  startModelDownload: (repoId: string, filename: string, revision?: string) =>
+    request<ModelDownload>("/api/v1/models/downloads", {
+      method: "POST", body: JSON.stringify({ repo_id: repoId, filename, revision: revision || null }),
+    }),
   selectDevice: (deviceIndex: number) =>
     request<GpuInventory>("/api/v1/system/device", {
       method: "PUT",

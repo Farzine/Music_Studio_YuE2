@@ -7,6 +7,7 @@ memory budget, and it is only torn down when the idle policy says so.
 from __future__ import annotations
 
 import logging
+import gc
 import threading
 import time
 from dataclasses import dataclass
@@ -223,14 +224,34 @@ class ModelManager:
 
     def release(self) -> None:
         with self._lock:
-            if self._pipeline is not None:
-                try:
-                    self._pipeline.close()
-                except Exception:
-                    logger.exception("closing the pipeline failed")
+            pipeline = self._pipeline
+            device_index = self._key.device_index if self._key else None
             self._pipeline = None
             self._key = None
             self._loaded_at = None
+            self._last_used = None
+            if pipeline is not None:
+                try:
+                    pipeline.close()
+                except Exception:
+                    logger.exception("closing the pipeline failed")
+                del pipeline
+                gc.collect()
+                try:
+                    import torch
+
+                    with torch.cuda.device(device_index):
+                        torch.cuda.empty_cache()
+                        torch.cuda.ipc_collect()
+                except Exception:
+                    logger.exception("clearing CUDA cache failed")
+
+    def release_if_device_changed(self) -> bool:
+        with self._lock:
+            if self._key is None or self._key.device_index == self.device_index:
+                return False
+            self.release()
+            return True
 
     def maybe_unload_idle(self) -> bool:
         """Honour MODEL_IDLE_UNLOAD_SECONDS. 0 keeps the model resident."""

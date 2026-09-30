@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://127.0.0.1:3000"
 
     yue2_model_path: str = "./models/YuE2-3B"
+    yue2_models_dir: str = "./models"
     yue2_vae_path: str = "./models/YuE2-Vae"
     yue2_vae_legacy_path: str = "./models/YuE2-Vae-legacy"
     sheetsage2_model_path: str = "./models/SheetSage2"
@@ -60,6 +61,7 @@ class Settings(BaseSettings):
     yue2_quantization: str = "none"
     yue2_offload_ar: bool = False
     yue2_local_files_only: bool = True
+    audiocpp_cli_path: str = "./tools/audio.cpp/build/bin/audiocpp_cli"
 
     comfy_api_url: str | None = None
     comfy_workflow_path: str = "./yue2_full.json"
@@ -116,6 +118,15 @@ class Settings(BaseSettings):
     @property
     def sheetsage2_path(self) -> Path:
         return self._resolve(self.sheetsage2_model_path)
+
+    @property
+    def models_path(self) -> Path:
+        return self._resolve(self.yue2_models_dir)
+
+    @property
+    def audiocpp_executable(self) -> str:
+        value = self.audiocpp_cli_path
+        return str(self._resolve(value)) if "/" in value else value
 
     @property
     def sheetsage2_python(self) -> Path:

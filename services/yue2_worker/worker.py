@@ -35,6 +35,7 @@ from yue2_studio_core.settings import get_settings  # noqa: E402
 from yue2_studio_core.store import Store, write_json_atomic  # noqa: E402
 
 from services.yue2_worker.adapters.base import GenerationContext  # noqa: E402
+from services.yue2_worker.adapters.audiocpp import AudioCppBackend  # noqa: E402
 from services.yue2_worker.engine import artifacts as artifact_writer  # noqa: E402
 from services.yue2_worker.jobs.reporter import JobProgressReporter  # noqa: E402
 from services.yue2_worker.model_manager.manager import ModelManager  # noqa: E402
@@ -141,6 +142,16 @@ def reset_gpu_peak(index: int | None = None) -> None:
         pass
 
 
+def is_gguf_model(reference: str) -> bool:
+    metadata = Path(reference) / "studio-model.json"
+    if not metadata.is_file():
+        return False
+    try:
+        return str(json.loads(metadata.read_text(encoding="utf-8")).get("filename", "")).endswith(".gguf")
+    except (OSError, ValueError):
+        return False
+
+
 class Worker:
     def __init__(self, *, once: bool = False) -> None:
         self.settings = get_settings()
@@ -152,6 +163,8 @@ class Worker:
         self.once = once
         self._stop = asyncio.Event()
         self._current: GenerationJob | None = None
+        self._job_device_index: int | None = None
+        self._cancel_current: threading.Event | None = None
 
     # -- heartbeat --------------------------------------------------------- #
 
@@ -169,7 +182,7 @@ class Worker:
             "max_concurrent_gpu_jobs": self.settings.max_concurrent_gpu_jobs,
             "model": self.manager.state(),
             "runtime": self.manager.runtime_versions(),
-            "gpu": gpu_snapshot(self.manager.device_index),
+            "gpu": gpu_snapshot(self._job_device_index if self._job_device_index is not None else self.manager.device_index),
             "pid": os.getpid(),
         }
         write_json_atomic(self.heartbeat_path, payload)
@@ -180,6 +193,11 @@ class Worker:
             try:
                 self.write_heartbeat(state)
                 if self._current is None:
+                    state = self.manager.state()
+                    if state["loaded"] and state["device_index"] != self.manager.device_index:
+                        if hasattr(self.backend, "end_job"):
+                            self.backend.end_job()
+                    self.manager.release_if_device_changed()
                     self.manager.maybe_unload_idle()
             except Exception:
                 logger.exception("heartbeat failed")
@@ -206,8 +224,15 @@ class Worker:
 
     async def run_job(self, job: GenerationJob) -> None:
         self._current = job
+        self._job_device_index = self.manager.device_index
+        is_gguf = is_gguf_model(job.config.model.checkpoint)
+        backend = AudioCppBackend(self.settings, self.store, self._job_device_index) if is_gguf else self.backend
+        if is_gguf:
+            self.backend.end_job() if hasattr(self.backend, "end_job") else None
+            self.manager.release()
         reporter = JobProgressReporter(self.store, job)
         cancel_event = threading.Event()
+        self._cancel_current = cancel_event
         done = threading.Event()
         watcher = threading.Thread(
             target=self._cancel_watcher, args=(job.id, cancel_event, done), daemon=True, name="cancel-watch"
@@ -218,25 +243,29 @@ class Worker:
             job_id=job.id, config=job.config, reporter=reporter, cancel_event=cancel_event
         )
         started = time.perf_counter()
-        reset_gpu_peak(self.manager.device_index)
+        reset_gpu_peak(self._job_device_index)
         try:
-            warnings = await self.backend.validate_config(job.config)
+            warnings = await backend.validate_config(job.config)
             for message in warnings:
                 reporter.note(message, severity="WARNING")
 
-            await self.backend.prepare(job.config, context)
+            await backend.prepare(job.config, context)
+            if not is_gguf:
+                loaded_index = self.manager.state()["device_index"]
+                if loaded_index is not None:
+                    self._job_device_index = loaded_index
             load_seconds = time.perf_counter() - started
 
-            plan = await self.backend.generate_plan(context)
+            plan = await backend.generate_plan(context)
             if cancel_event.is_set():
                 raise StudioError(ErrorCode.CANCELLED, "Cancelled after planning.", stage="planning")
 
-            tokens = await self.backend.generate_audio(context, plan)
+            tokens = await backend.generate_audio(context, plan)
             if cancel_event.is_set():
                 raise StudioError(ErrorCode.CANCELLED, "Cancelled after generation.", stage="semantic")
 
-            audio = await self.backend.decode_audio(context, tokens)
-            result = await self.backend.finalise(context, plan, tokens, audio)
+            audio = await backend.decode_audio(context, tokens)
+            result = await backend.finalise(context, plan, tokens, audio)
 
             reporter.begin(JobStatus.POST_PROCESSING, "post_processing", "Saving artifacts")
             post_started = time.perf_counter()
@@ -279,7 +308,7 @@ class Worker:
             job.timing.synthesis_seconds = round(float(tokens.timing.get("synthesis_seconds", 0.0)), 3)
             job.timing.decode_seconds = round(float(audio.timing.get("decode_seconds", 0.0)), 3)
             job.timing.output_seconds = audio_artifact.duration_seconds if audio_artifact else None
-            snapshot = gpu_snapshot(self.manager.device_index)
+            snapshot = gpu_snapshot(self._job_device_index)
             job.timing.gpu_peak_bytes = snapshot.get("peak_allocated_bytes")
 
             if plan.truncated:
@@ -376,7 +405,13 @@ class Worker:
         finally:
             done.set()
             reporter.flush()
+            if is_gguf:
+                await backend.shutdown()
+            elif hasattr(backend, "end_job"):
+                backend.end_job()
             self._current = None
+            self._job_device_index = None
+            self._cancel_current = None
 
     # -- main loop --------------------------------------------------------- #
 
@@ -407,11 +442,14 @@ class Worker:
             with contextlib.suppress(asyncio.CancelledError):
                 await heartbeat
             await self.backend.shutdown()
+            self.manager.release()
             self.write_heartbeat("stopped")
             logger.info("worker stopped")
 
     def request_stop(self) -> None:
         self._stop.set()
+        if self._cancel_current is not None:
+            self._cancel_current.set()
 
 
 async def main_async(once: bool) -> int:

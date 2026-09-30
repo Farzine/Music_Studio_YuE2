@@ -3,13 +3,51 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query
+from pydantic import BaseModel
 
-from app.core.deps import budget_provider, capability_provider
+from app.core.deps import budget_provider, capability_provider, model_downloads_provider
 from app.services.budget import BudgetService
 from app.services.capabilities import CapabilityService
+from app.services.model_downloads import ModelDownloads
 
 router = APIRouter(tags=["models"])
+
+
+class DownloadRequest(BaseModel):
+    repo_id: str
+    filename: str
+    revision: str | None = None
+
+
+@router.get("/models/hub")
+def browse_hub(
+    repo_id: str,
+    revision: str | None = None,
+    downloads: ModelDownloads = Depends(model_downloads_provider),
+) -> dict:
+    return downloads.browse(repo_id, revision)
+
+
+@router.get("/models/downloads")
+def list_downloads(downloads: ModelDownloads = Depends(model_downloads_provider)) -> dict:
+    return {"items": downloads.list()}
+
+
+@router.get("/models/downloads/{download_id}")
+def download_status(download_id: str, downloads: ModelDownloads = Depends(model_downloads_provider)) -> dict:
+    return downloads.get(download_id)
+
+
+@router.post("/models/downloads", status_code=202)
+def download_model(
+    payload: DownloadRequest,
+    background: BackgroundTasks,
+    downloads: ModelDownloads = Depends(model_downloads_provider),
+) -> dict:
+    job = downloads.start(payload.repo_id, payload.filename, payload.revision)
+    background.add_task(downloads.run, job["id"])
+    return job
 
 
 @router.get("/models")

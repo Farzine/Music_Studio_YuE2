@@ -23,6 +23,8 @@ export const keys = {
   health: ["health"] as const,
   system: ["system"] as const,
   gpus: ["gpus"] as const,
+  modelRecommendation: ["model-recommendation"] as const,
+  modelDownloads: ["model-downloads"] as const,
   queue: ["queue"] as const,
   generations: (params: Record<string, unknown>) => ["generations", params] as const,
   generation: (id: string) => ["generation", id] as const,
@@ -47,6 +49,12 @@ export const useSystemInfo = () =>
 export const useGpus = () =>
   useQuery({ queryKey: keys.gpus, queryFn: api.gpus, refetchInterval: 5_000 });
 
+export const useModelRecommendation = () =>
+  useQuery({ queryKey: keys.modelRecommendation, queryFn: api.modelRecommendation, refetchInterval: 10_000 });
+
+export const useModelDownloads = () =>
+  useQuery({ queryKey: keys.modelDownloads, queryFn: api.modelDownloads, refetchInterval: 2_000 });
+
 /** Choosing a GPU rewrites runtime settings; the worker picks it up next job. */
 export function useSelectDevice() {
   const client = useQueryClient();
@@ -55,6 +63,7 @@ export function useSelectDevice() {
     onSuccess: (data) => {
       client.setQueryData(keys.gpus, data);
       client.invalidateQueries({ queryKey: keys.system });
+      client.invalidateQueries({ queryKey: keys.modelRecommendation });
     },
   });
 }

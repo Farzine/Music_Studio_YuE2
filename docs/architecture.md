@@ -25,7 +25,7 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │ services/yue2_worker — (.venv-yue2: torch 2.10 + yue2-infer)     │
 │  ModelManager        keeps the 7.26 GB checkpoint resident       │
-│  adapters/           yue2_native · mock · comfy_workflow         │
+│  adapters/           yue2_native · audiocpp · mock · comfy        │
 │  jobs/reporter.py    writes real stage progress back to the job  │
 │  engine/artifacts.py audio, score, latents, manifest             │
 └───────────────┬──────────────────────────────────────────────────┘
@@ -41,6 +41,14 @@
 holds the domain models, the settings, the filesystem store, the queue
 interface, the parameter registry loader, the manifest builder and the vendored
 ABC parser. It depends on pydantic and nothing heavier.
+
+Model downloads run in the API as background work. Their small status documents
+live under `data/model-downloads/`; completed files live under `models/hub/`.
+Each downloaded variant has its own directory and `studio-model.json` identity.
+The worker chooses audio.cpp for a complete GGUF model and the configured
+Python backend for existing checkpoints. A GGUF job launches one CLI process
+on the selected CUDA device, collects its WAV, ABC and semantic outputs, then
+lets the process exit and release its GPU memory.
 
 ## Why three processes
 

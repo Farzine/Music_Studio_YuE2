@@ -12,6 +12,7 @@ import { GenerationCard } from "@/components/library/generation-card";
 import { useGeneration, useGenerations, useProject, useProjectConfig } from "@/hooks/use-queries";
 import { ApiRequestError } from "@/lib/api";
 import type { ConfigObject } from "@/lib/config";
+import { setPath } from "@/lib/config";
 
 /**
  * The Create screen, in one of three states.
@@ -27,6 +28,7 @@ function CreateScreen() {
   const search = useSearchParams();
   const from = search.get("from") ?? undefined;
   const projectParam = search.get("project") ?? undefined;
+  const chosenModel = search.get("model") ?? undefined;
 
   const source = useGeneration(from);
   const projectId = projectParam ?? source.data?.generation.project_id;
@@ -79,7 +81,8 @@ function CreateScreen() {
   }
 
   const job = source.data?.generation;
-  const initialConfig = (job?.config ?? projectConfig.data?.config) as ConfigObject | undefined;
+  const baseConfig = (job?.config ?? projectConfig.data?.config) as ConfigObject | undefined;
+  const initialConfig = chosenModel ? setPath(baseConfig ?? {}, "model.checkpoint", chosenModel) : baseConfig;
   const origin = job
     ? {
         title: `Regenerating version ${job.version}${job.title ? ` of “${job.title}”` : ""}`,
@@ -109,7 +112,7 @@ function CreateScreen() {
         <CreateForm
           // Remounts when the source changes, so the loaded settings are the
           // ones that belong to it rather than a half-updated mixture.
-          key={from ?? projectParam ?? "new"}
+          key={from ?? projectParam ?? chosenModel ?? "new"}
           initialConfig={initialConfig}
           initialTitle={job?.title ?? project.data?.project.title ?? ""}
           projectId={projectId}

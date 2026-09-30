@@ -30,7 +30,7 @@ from yue2_studio_core.models import (
     SongProject,
     utcnow,
 )
-from yue2_studio_core.parameters import config_from_overrides, unsupported_parameters_in_use
+from yue2_studio_core.parameters import config_from_overrides, gguf_unsupported_parameters, unsupported_parameters_in_use
 from yue2_studio_core.queue import FilesystemJobQueue
 from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store
@@ -83,7 +83,14 @@ class GenerationService:
         if config.prompt.abc.strip():
             validate_abc(config.prompt.abc)  # raises AbcValidationError with the reason
 
-        self._validate_model(config)
+        model_entry = self._validate_model(config)
+        is_gguf = model_entry["format"] == "gguf"
+        if is_gguf:
+            unsupported = gguf_unsupported_parameters(config)
+            if mode is GenerationMode.COVER:
+                unsupported.append("cover mode")
+            if unsupported:
+                raise UnsupportedCapabilityError("GGUF does not support: " + ", ".join(unsupported))
         self._validate_reference_audio(config)
         warnings.extend(self._validate_token_budget(config))
 
@@ -155,7 +162,7 @@ class GenerationService:
             return list(estimate.reasons)
         return []
 
-    def _validate_model(self, config: GenerationConfig) -> None:
+    def _validate_model(self, config: GenerationConfig) -> dict:
         """Refuse an unknown or incomplete model, naming the actual problem."""
         entry = self.capabilities.resolve_model_choice(config.model.checkpoint)
         if entry is None:
@@ -177,6 +184,7 @@ class GenerationService:
                     "problem": entry["problem"],
                 },
             )
+        return entry
 
     def _validate_reference_audio(self, config: GenerationConfig) -> None:
         """Cover mode: the upload has to exist and be readable, now, not later."""

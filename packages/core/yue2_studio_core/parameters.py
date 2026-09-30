@@ -125,6 +125,17 @@ def unsupported_parameters_in_use(config: GenerationConfig, backend: str) -> lis
     return violations
 
 
+def gguf_unsupported_parameters(config: GenerationConfig) -> list[str]:
+    """Controls that audio.cpp cannot honor when changed from studio defaults."""
+    defaults = GenerationConfig()
+    keys = (
+        "model.revision", "model.vae", "model.vae_revision", "model.compute_backend",
+        "model.quantization", "model.offload_ar", "model.memory_budget_gib",
+        "model.local_files_only", "decoder.mode", "decoder.tile_frames",
+    )
+    return [key for key in keys if get_path(config, key) != get_path(defaults, key)] + sorted(config.comfy_only_fields_in_use)
+
+
 def backend_capabilities(backend: str) -> dict:
     document = load_capabilities_document()
     if backend not in document["backends"]:

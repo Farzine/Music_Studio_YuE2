@@ -26,6 +26,7 @@ export function PromptFields({
   reference,
   onReferenceChange,
   onChange,
+  gguf = false,
 }: {
   schema: GenerationSchema;
   config: ConfigObject;
@@ -33,6 +34,7 @@ export function PromptFields({
   reference: UploadedAudio | null;
   onReferenceChange: (next: UploadedAudio | null) => void;
   onChange: (path: string, value: unknown) => void;
+  gguf?: boolean;
 }) {
   const parameter = (key: string) => schema.parameters.find((item) => item.key === key);
   const mode = (getPath(config, "prompt.mode") as string) ?? "full";
@@ -43,6 +45,12 @@ export function PromptFields({
   const seedBehaviour = getPath(config, "sampling.control_after_generate") as string;
   const cover = capabilities?.capabilities?.cover;
   const needsLyrics = mode !== "off";
+  const modeDefinition = parameter("prompt.mode");
+  const modeOptions = gguf && modeDefinition
+    ? { ...modeDefinition, options: modeDefinition.options?.map((option) => option.value === "cover"
+      ? { ...option, enabled: false, disabled_reason: "GGUF cover transcription is not available." }
+      : option) }
+    : modeDefinition;
 
   const insertTag = (tag: string) =>
     onChange("prompt.lyrics", lyrics ? `${lyrics.replace(/\s*$/, "")}\n\n${tag}\n` : `${tag}\n`);
@@ -113,7 +121,7 @@ export function PromptFields({
       </Field>
 
       <ModeSelector
-        parameter={parameter("prompt.mode")}
+        parameter={modeOptions}
         value={mode}
         onChange={(next) => onChange("prompt.mode", next)}
       />

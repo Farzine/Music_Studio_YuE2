@@ -262,6 +262,8 @@ export interface ModelEntry {
   is_default: boolean;
   bytes: number | null;
   problem: string | null;
+  format?: "safetensors" | "gguf";
+  filename?: string;
 }
 
 export interface Capabilities {
@@ -300,6 +302,38 @@ export interface GpuInventory {
   error: string | null;
   cuda_visible_devices: string | null;
   note: string | null;
+}
+
+export interface ModelRecommendation {
+  device_index: number;
+  available_bytes: number | null;
+  variants: {
+    label: string;
+    repo_id: string;
+    filename: string;
+    model_bytes: number;
+    parameters: number;
+    peak_bytes: number;
+    required_bytes: number;
+    runnable: boolean;
+  }[];
+  recommended: ModelRecommendation["variants"][number] | null;
+  max_model_bytes: number | null;
+  max_parameters: number | null;
+  note: string;
+}
+
+export interface ModelDownload {
+  id: string;
+  repo_id: string;
+  filename: string;
+  revision: string;
+  status: "downloading" | "complete" | "failed";
+  error: string | null;
+  path: string | null;
+  completed_files: number;
+  total_files: number | null;
+  current_file: string | null;
 }
 
 export type Risk = "SAFE" | "WARNING" | "UNSAFE";

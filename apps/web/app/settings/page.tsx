@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { ModelDownloads } from "@/components/settings/model-downloads";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
@@ -44,10 +45,12 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Models</CardTitle>
-          <CardDescription>Local weight directories the worker can load.</CardDescription>
+          <CardTitle>Music models</CardTitle>
+          <CardDescription>Browse Hugging Face and download a YuE2 model variant for this machine.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-5">
+          <ModelDownloads />
+          <h2 className="text-sm font-semibold">Installed models</h2>
           {capabilities.models.map((model) => (
             <div
               key={model.id}

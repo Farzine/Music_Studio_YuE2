@@ -17,6 +17,7 @@ out/
 .env.local
 data/
 models/
+tools/audio.cpp/
 logs/
 outputs/
 runs/
@@ -28,3 +29,5 @@ runs/
 .pytest_cache/
 *.egg-info/
 *.tsbuildinfo
+
+*.agents/

@@ -247,6 +247,7 @@ class NativeYuE2Backend:
         self._budget = {}
         self._adjustments = []
         self._termination = None
+        self._pipeline = None
 
         transcribed_abc: str | None = None
         if config.prompt.mode is GenerationMode.COVER:
@@ -525,4 +526,9 @@ class NativeYuE2Backend:
         logger.info("cancellation requested for %s", job_id)
 
     async def shutdown(self) -> None:
+        self._pipeline = None
         await asyncio.to_thread(self.manager.release)
+
+    def end_job(self) -> None:
+        """Do not retain a second reference after the manager unloads weights."""
+        self._pipeline = None
