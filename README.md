@@ -78,6 +78,10 @@ disabled with the specific reason, rather than quietly missing.
 - Real progress only: no invented percentages.
 - A reproducibility manifest per generation, including weight hashes.
 - Pick which GPU runs the model, from the System page, without a restart.
+- Separate Model, VAE and GPU controls in Create and project settings, with
+  backend compatibility checks and preserved choices when applying presets.
+  Native VAEs use the same download workflow; Settings can browse and register
+  existing files or directories within trusted model roots.
 - Worker-owned native Load/Unload command APIs with acknowledged lifecycle,
   separate model/VAE placement and visible cleanup failures on System.
   Installed Models provides acknowledged Load/Unload actions; see
@@ -289,6 +293,7 @@ COMFY_WORKFLOW_PATH=./yue2_full.json
 | `YUE2_MODEL_PATH` | The YuE2-3B directory, or a Hugging Face repo id. |
 | `YUE2_VAE_PATH` | The audio decoder directory, or a repo id. |
 | `YUE2_VAE_LEGACY_PATH` | Optional older decoder. Its absence disables that option with a reason. |
+| `MODEL_BROWSER_ROOTS` | JSON array of additional trusted directories for Settings host-path browsing. Default `[]`; model storage and configured local model/VAE directories are already allowed. |
 | `YUE2_MODEL_REVISION`, `YUE2_VAE_REVISION` | Pin a revision for reproducible comparisons. Empty means "whatever is in the directory", which is hashed into every manifest anyway. |
 | `DATA_DIR` | Where projects, versions, audio, uploads and presets live. This is the whole database. |
 | `CONFIGS_DIR` | Where the parameter registry and defaults are read from. |

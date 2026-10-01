@@ -100,6 +100,7 @@ class ModelFacts(BaseModel):
     backend: str | None = None
     tensor_element_count: int | None = None
     checksum_sha256: str | None = None
+    vae_requirements: str | None = None
 
 
 class ModelMetadata(ModelFacts):
@@ -152,6 +153,23 @@ def resolve_vae_reference(choice: str, settings: Settings) -> str:
     return settings.vae_legacy_reference if choice == "legacy" else choice
 
 
+def selected_vae_error(model: dict, choice: str, settings: Settings, vae: dict | None = None) -> str | None:
+    """Shared admission/option check; the audio.cpp adapter has one bundled VAE."""
+    if model["format"] == "gguf":
+        bundled = str(Path(model["id"]) / GGUF_COMPANIONS[0])
+        if choice not in {"standard", bundled}:
+            return "This audio.cpp package requires its bundled F16 VAE; select the bundled VAE explicitly."
+        return None
+    if not vae or vae["role"] != "vae":
+        return "Choose an installed, compatible VAE separately from the inference model."
+    if not vae["inference_ready"]:
+        return vae.get("problem") or "The selected VAE is unavailable; inspect and validate its files."
+    try:
+        return vae_compatibility_error(model["id"], vae["id"])
+    except (OSError, ValueError) as exc:
+        return f"VAE compatibility could not be checked: {exc}"
+
+
 def vae_compatibility_error(model_reference: str, vae_reference: str) -> str | None:
     """Compare declared native latent widths; unknown widths are not invented."""
     model = read_json_object(Path(model_reference) / "config.json")
@@ -179,6 +197,8 @@ def read_model_metadata(reference: str) -> dict:
     if not metadata.is_file():
         return {}
     value = read_json_object(metadata)
+    if value.get("role", "model") not in {"model", "vae"}:
+        raise ValueError("studio-model.json role must be model or vae.")
     for key in ("repo_id", "revision"):
         if value.get(key) is not None and not isinstance(value[key], str):
             raise ValueError(f"studio-model.json {key} must be a string.")
@@ -262,6 +282,8 @@ def describe_model_files(reference: str, role: Literal["model", "vae"], *, is_de
         bytes=weights.stat().st_size if downloaded else None,
         filename=filename, format="gguf" if gguf else "safetensors" if suffix == ".safetensors" else "unknown",
         architecture=architecture, precision=precision,
+        vae_requirements=("Bundled YuE2 F16 GGUF VAE and sidecar configuration" if gguf and role == "model" else
+                          "Compatible native YuE2 VAE (declared latent widths must match)" if architecture == "yue2" and role == "model" else None),
         source="huggingface" if metadata.get("repo_id") else "local",
         huggingface_repo=metadata.get("repo_id"), revision=metadata.get("revision"),
         commit_hash=(metadata.get("revision") if re.fullmatch(r"[0-9a-fA-F]{40}", metadata.get("revision") or "") else None),

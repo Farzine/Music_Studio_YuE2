@@ -40,8 +40,8 @@ cards as installed models and System, including reasons, metadata, safe budget,
 VAE/cache/workspace/loading RAM estimates and per-GPU comparisons. Unknown
 placement/readiness is not inferred from a small file. **Inspect & preview
 download** carries the repository, immutable commit and exact filename into
-Download Model; it neither queues a transfer nor chooses a task model. Independent
-task Model/VAE/GPU controls and native VAE downloads remain a later UX slice.
+Download Model; it neither queues a transfer nor chooses a task model. Create and
+project Settings have separate backend-validated Model/VAE/GPU controls.
 
 The existing [audio.cpp example repository](https://huggingface.co/audio-cpp/Yue2-3B-GGUF)
 is supported through its file/configuration metadata, rather than a repository-ID
@@ -54,7 +54,8 @@ listing or optional JSON failures appear as warnings; missing facts stay Unknown
 - Every repository file has its name, extension, nullable byte size and LFS SHA256
   when supplied by Hugging Face. Git object IDs are not presented as SHA256.
 - Candidates have shared model descriptors and adapter requirements. Model and
-  VAE entries are separate; the browser's model list excludes identified decoders.
+  VAE entries are separate; the Resource type selector filters model/native VAE
+  candidates rather than offering decoders as inference checkpoints.
 - Architecture comes from configuration. Parameter count is only populated from
   explicit positive integer `parameter_count` or `num_parameters` configuration
   metadata. A `3B` name or tensor storage size never becomes a parameter count.
@@ -183,10 +184,18 @@ progress callback, so one private progress-factory seam is isolated in
 `huggingface_transfer.py` and scoped to studio transfers. HTTP resume, Xet and
 concurrent callback tests must pass before upgrading that dependency.
 
-Dedicated model pages and browser interaction tests follow in the later UX/testing
-phases. Native VAE download registration/role selection is still pending; use the
-existing configured/local VAE workflow. Standalone GGUF VAE selection is not offered
-by the current audio.cpp adapter, which uses the package's bundled F16 VAE.
+Choose **Resource type → Native VAE** to inspect and install native decoder
+repositories. Their required files include the selected safetensors weights and
+`config.json`. Downloads carry the VAE role through verification, registration,
+retry and inventory refresh. Installed decoders appear in the separate task VAE
+selector; downloading one never changes the selected inference model. Use Model
+is offered only for inference checkpoints. Older records without a role retain
+their inference-model default.
+
+Standalone GGUF VAE download previews are refused with an explanation: the
+current audio.cpp adapter uses the inference package's bundled F16 VAE. Select
+that package path explicitly in the new task UI; legacy `standard` API requests
+still resolve the bundled decoder. Browser interaction tests remain pending.
 
 ## Errors and authentication
 

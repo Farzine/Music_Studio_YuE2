@@ -8,6 +8,7 @@ import * as React from "react";
 import { type UploadedAudio } from "@/components/audio/audio-uploader";
 import { BudgetPanel } from "@/components/generation/budget-panel";
 import { PromptFields } from "@/components/generation/prompt-fields";
+import { TaskSelectors } from "@/components/settings/task-selectors";
 import { AdvancedSettings } from "@/components/settings/advanced-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,10 +17,10 @@ import { ErrorNotice, Skeleton, WarningNotice } from "@/components/ui/feedback";
 import { Field, Input } from "@/components/ui/field";
 import { PresetPicker } from "@/features/create/preset-picker";
 import { useBudgetEstimate } from "@/hooks/use-budget";
-import { useCapabilities, useGenerationActions, usePresets, useSchema } from "@/hooks/use-queries";
+import { useCapabilities, useGenerationActions, usePresets, useSchema, useTaskOptions } from "@/hooks/use-queries";
 import { ApiRequestError, api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { deepMerge, getPath, setPath, type ConfigObject } from "@/lib/config";
+import { deepMerge, getPath, setPath, preserveTaskSelection, type ConfigObject } from "@/lib/config";
 import type { Preset } from "@/types/api";
 
 export function CreateForm({
@@ -39,7 +40,6 @@ export function CreateForm({
   origin?: { title: string; description: string; href?: string; linkLabel?: string };
 }) {
   const router = useRouter();
-  const { data: schema, isLoading: schemaLoading } = useSchema();
   const { data: capabilities } = useCapabilities();
   const { data: presetData, refetch: refetchPresets } = usePresets();
   const { create } = useGenerationActions();
@@ -71,8 +71,10 @@ export function CreateForm({
   const selectedVae = (getPath(effective, "model.vae") as string) ?? "standard";
   const offloadAr = (getPath(effective, "model.offload_ar") as boolean) ?? false;
   const computeBackend = (getPath(effective, "model.compute_backend") as string) ?? "torch";
-  const modelOption = schema?.parameters.find((item) => item.key === "model.checkpoint")?.options
-    ?.find((item) => item.value === selectedModel);
+  const taskDevice = getPath(effective, "model.device_index") as number | undefined;
+  const { data: schema, isLoading: schemaLoading } = useSchema(taskDevice);
+  const resources = useTaskOptions((effective.model ?? {}) as Record<string, unknown>);
+  const modelOption = resources.data?.models.find((item) => item.value === selectedModel);
   const gguf = modelOption?.format === "gguf";
 
   // Live token budget for exactly what would be submitted. The backend counts
@@ -100,7 +102,7 @@ export function CreateForm({
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const result = await api.vramEstimate(duration, decoderMode, budget, selectedModel, selectedVae, offloadAr, computeBackend);
+        const result = await api.vramEstimate(duration, decoderMode, budget, selectedModel, selectedVae, offloadAr, computeBackend, taskDevice);
         if (!cancelled) setVramWarning(result.warning?.message ?? null);
       } catch {
         if (!cancelled) setVramWarning(null);
@@ -110,11 +112,12 @@ export function CreateForm({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [duration, decoderMode, budget, selectedModel, selectedVae, offloadAr, computeBackend]);
+  }, [duration, decoderMode, budget, selectedModel, selectedVae, offloadAr, computeBackend, taskDevice]);
 
   const needsLyrics = mode !== "off";
   const needsReference = mode === "cover";
   const canSubmit =
+    resources.data?.valid === true && !resources.error && !resources.isFetching &&
     modelOption?.enabled === true &&
     style.trim().length > 0 &&
     (!needsLyrics || lyrics.trim().length > 0) &&
@@ -122,7 +125,7 @@ export function CreateForm({
     !(gguf && mode === "cover") &&
     !overBudget;
 
-  const blocker = !modelOption || modelOption.enabled !== true
+  const blocker = resources.error ? resources.error.message : !resources.data?.valid ? resources.data?.issues[0] ?? "Checking Model, VAE and GPU…" : !modelOption || modelOption.enabled !== true
     ? modelOption?.disabled_reason ?? (schemaLoading ? "Checking model availability…" : "Choose an available inference model in Model settings.")
     : !style.trim()
     ? "Describe a style to get started."
@@ -145,7 +148,8 @@ export function CreateForm({
         parent_generation_id: parentGenerationId ?? null,
         // The whole configuration is sent, not a diff: the take that comes out
         // has to record exactly what it ran with.
-        config: effective as Record<string, unknown>,
+        config: (resources.data?.backend === "native" && getPath(effective, "model.device_index") == null
+          ? setPath(effective, "model.device_index", resources.data.selected_device_index) : effective) as Record<string, unknown>,
       });
       router.push(`/generations/${result.generation.id}`);
     } catch (submitError) {
@@ -211,6 +215,9 @@ export function CreateForm({
               onChange={(event) => setTitle(event.target.value)}
             />
           </Field>
+
+          <TaskSelectors config={effective} options={resources.data} error={resources.error} pending={resources.isLoading}
+            onChange={update} />
 
           <PromptFields
             schema={schema}
@@ -280,12 +287,12 @@ export function CreateForm({
               // A preset is a full configuration, but it is a settings preset:
               // applying one must not wipe the song the user has written.
               const { prompt: _ignored, ...settings } = preset.config as unknown as ConfigObject;
-              setConfig((current) => ({ ...settings, prompt: current.prompt }));
+              setConfig((current) => preserveTaskSelection({ ...settings, prompt: current.prompt }, current));
               setActivePreset(preset.id);
             }}
             onReset={() => {
               // Same rule in reverse: reset the settings, keep the song.
-              setConfig((current) => (current.prompt ? { prompt: current.prompt } : {}));
+              setConfig((current) => preserveTaskSelection(current.prompt ? { prompt: current.prompt } : {}, current));
               setActivePreset("preset_balanced");
             }}
           />

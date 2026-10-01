@@ -20,7 +20,7 @@ from yue2_studio_core.errors import (
     ValidationError,
 )
 from yue2_studio_core.ids import new_id
-from yue2_studio_core.model_metadata import resolve_vae_reference, vae_compatibility_error
+from yue2_studio_core.model_metadata import resolve_vae_reference, selected_vae_error, vae_compatibility_error
 from yue2_studio_core.models import (
     GenerationConfig,
     GenerationJob,
@@ -66,7 +66,10 @@ class GenerationService:
     def validate_config(self, config: GenerationConfig) -> list[str]:
         """Server-side validation. Frontend checks are a convenience, not a gate."""
         backend = self.settings.yue2_backend
-        capabilities = self.capabilities.capabilities(backend)
+        capabilities = (self.capabilities.capabilities(backend) if config.model.device_index is None
+                        else self.capabilities.capabilities(backend, config.model.device_index))
+        from app.services.task_selection import validate_task_device
+        validate_task_device(config.model.device_index, self.settings, self.store)
         warnings: list[str] = []
 
         if not config.prompt.style.strip():
@@ -179,6 +182,9 @@ class GenerationService:
             raise ValidationError("The selected entry is a VAE. Choose an inference model separately.",
                                   details={"parameter": "model.checkpoint", "model": entry["id"]})
         self._require_ready(entry, "model.checkpoint")
+        if entry["format"] == "gguf":
+            if problem := selected_vae_error(entry, config.model.vae, self.settings):
+                raise UnsupportedCapabilityError(problem, details={"parameter": "model.vae"})
         if entry["format"] == "safetensors":
             vae_reference = resolve_vae_reference(config.model.vae, self.settings)
             vae = self.capabilities.resolve_model_choice(vae_reference)

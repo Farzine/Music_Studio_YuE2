@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from yue2_studio_core.errors import ConflictError, ErrorCode, StudioError, classify_exception
-from yue2_studio_core.model_metadata import describe_model_files, resolve_model_reference, resolve_vae_reference, vae_compatibility_error
+from yue2_studio_core.model_metadata import GGUF_COMPANIONS, describe_model_files, is_gguf_model, resolve_model_reference, resolve_vae_reference, selected_vae_error, vae_compatibility_error
 from yue2_studio_core.model_files import model_file_leases
 from yue2_studio_core.model_lifecycle import ModelLifecycle
 from yue2_studio_core.model_registry import ModelRegistry
@@ -83,11 +83,16 @@ class ModelManager:
         return resolve_model_reference(config.model.checkpoint, self.settings)
 
     def resolve_vae(self, config: GenerationConfig) -> str:
+        model = self.resolve_model(config)
+        if is_gguf_model(model):
+            return str(Path(model) / GGUF_COMPANIONS[0])
         return resolve_vae_reference(config.model.vae, self.settings)
 
     def key_for(self, config: GenerationConfig, device_index: int | None = None) -> PipelineKey:
+        if device_index is None:
+            device_index = config.model.device_index if config.model.device_index is not None else self.device_index
         return PipelineKey(
-            device_index=self.device_index if device_index is None else device_index,
+            device_index=device_index,
             model=self.resolve_model(config),
             revision=config.model.revision,
             vae=self.resolve_vae(config),
@@ -106,6 +111,9 @@ class ModelManager:
     def verify_files(self, config: GenerationConfig) -> None:
         """Fail early with a precise reason instead of deep inside the runtime."""
         model = self.resolve_model(config)
+        if is_gguf_model(model):
+            if problem := selected_vae_error({"id": model, "format": "gguf"}, config.model.vae, self.settings):
+                raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, problem, stage="loading_model")
         entry = (ModelRegistry(self.settings, self._store).describe(model) if self._store else describe_model_files(model, "model"))
         references = [("model", model)]
         if entry.format != "gguf":

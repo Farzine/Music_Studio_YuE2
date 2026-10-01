@@ -146,7 +146,8 @@ class HuggingFaceService:
             if role == "vae" and gguf:
                 config = configs["sidecars/yue2-vae-config.json"]
             compatibility, problem = model_config_compatibility(filename, role, config, configs["sidecars/yue2-vae-config.json"])
-            missing = [name for name in model_required_files(filename) if name not in files] if role == "model" else []
+            required = list(model_required_files(filename)) if role == "model" else [filename, "config.json"] if not gguf else [filename]
+            missing = [name for name in required if name not in files]
             if missing:
                 compatibility, problem = "incompatible", "Repository lacks required adapter files: " + ", ".join(missing)
             parameters = config.get("parameter_count", config.get("num_parameters"))
@@ -158,12 +159,14 @@ class HuggingFaceService:
                 source="huggingface", huggingface_repo=repo_id, revision=revision or "main", commit_hash=commit,
                 architecture=config.get("model_type") if isinstance(config.get("model_type"), str) else None,
                 parameter_count=parameters, checksum_sha256=file["checksum_sha256"],
+                vae_requirements=("Bundled YuE2 F16 GGUF VAE and sidecar configuration" if gguf and role == "model" else
+                                  "Compatible native YuE2 VAE (declared latent widths must match)" if config.get("model_type") == "yue2" and role == "model" else None),
                 backend="audiocpp" if gguf else "native", download_status="missing", files_complete=False,
                 compatibility_status=compatibility, inference_status="incompatible" if compatibility == "incompatible" else "files_missing",
                 problem=problem,
             ).model_dump(mode="json")
             hint = re.search(r"(?:^|[-_.])(Q\d+(?:_[A-Z0-9]+)*|BF16|F16|F32)(?=[-_.]|$)", filename.upper())
-            candidates.append({"model": descriptor, "required_files": list(model_required_files(filename)) if role == "model" else [filename],
+            candidates.append({"model": descriptor, "required_files": required,
                                "missing_files": missing, "quantization_hint": hint.group(1) if hint else None,
                                "metadata_basis": "repository_configuration; weight headers not validated"})
             contexts[model_id] = {"model_config": config, "bundled_vae_bytes": files.get(GGUF_COMPANIONS[0], {}).get("bytes") if gguf else None}
@@ -185,6 +188,10 @@ class HuggingFaceService:
             raise NotFoundError(f"File {filename} does not exist in {repo_id}@{commit}.")
         if not filename.lower().endswith((".gguf", ".safetensors")):
             raise ValidationError("Choose a GGUF or safetensors primary model file.")
+        candidate = next(c for c in inspection["candidates"] if c["model"]["filename"] == filename)
+        role = candidate["model"].get("role", "model")
+        if role == "vae" and candidate["model"]["format"] == "gguf":
+            raise ValidationError("The current audio.cpp adapter requires its bundled F16 VAE. Download it with the inference model package; standalone GGUF VAEs cannot be selected.")
         if mode == "single":
             names = default_download_files(filename, set(files))
         elif mode == "repository":
@@ -214,7 +221,9 @@ class HuggingFaceService:
                       if (destination / name).is_file() and not (destination / name).is_symlink())
         remaining = max(0, known - present)
         insufficient = remaining + DOWNLOAD_DISK_RESERVE_BYTES > free
-        required = model_required_files(filename)
+        required = candidate.get("required_files", model_required_files(filename))
+        if role == "vae" and candidate["model"]["format"] == "safetensors":
+            required = [filename, "config.json"]
         missing = [name for name in required if name not in names]
         return {"repo_id": repo_id, "revision": commit, "requested_revision": inspection["requested_revision"],
                 "filename": filename, "mode": mode, "selection_identity": identity, "files": [files[name] for name in names],
@@ -223,7 +232,7 @@ class HuggingFaceService:
                 "destination": str(destination), "storage_path": str(existing), "free_bytes": free,
                 "safety_margin_bytes": DOWNLOAD_DISK_RESERVE_BYTES, "disk_status": "insufficient" if insufficient else "unknown" if unknown else "sufficient",
                 "can_download": not insufficient, "missing_required_files": missing,
-                "candidate": next(c for c in inspection["candidates"] if c["model"]["filename"] == filename),
+                "candidate": candidate,
                 "warnings": [*inspection["warnings"],
                              *(["Insufficient disk space for the known content plus 1 GiB of headroom."] if insufficient else []),
                              *(["Some file sizes are unknown; available storage cannot be guaranteed."] if unknown else []),

@@ -223,6 +223,37 @@ def test_native_loading_and_cover_transcription_use_captured_job_device(runtime_
     adapter.end_job()
 
 
+def test_worker_passes_task_model_vae_and_device_and_releases_previous_pipeline(runtime_worker, native_model_files, monkeypatch):
+    from yue2_studio_core.ids import new_id
+    from yue2_studio_core.models import GenerationJob, JobStatus
+    worker = runtime_worker
+    manager = worker.manager
+    manager.acquire(GenerationConfig())
+    calls = []
+    manager._pipeline.close = lambda: calls.append("release0")
+    model = native_model_files(worker.settings.models_path / "alternate")
+    vae = native_model_files(worker.settings.models_path / "alternate-vae", role="vae")
+    config = GenerationConfig(model={"checkpoint": str(model), "vae": str(vae), "device_index": 3})
+    assert manager.key_for(config).device_index == 3
+    project = worker.store.create_project(title="Explicit task resources")
+    job = worker.store.save_job(GenerationJob(id=new_id("gen"), project_id=project.id, config=config))
+    async def prepare(selected, context):
+        assert selected.model.checkpoint == str(model) and selected.model.vae == str(vae)
+        assert context.device_index == 3
+        manager.acquire(selected, context.device_index)
+        calls.append(f"load{manager._key.device_index}")
+        assert (manager._key.model, manager._key.vae) == (str(model), str(vae))
+    async def stop(context):
+        raise StudioError(ErrorCode.CANCELLED, "fixture stop after resource placement")
+    monkeypatch.setattr(worker.backend, "prepare", prepare)
+    monkeypatch.setattr(worker.backend, "generate_plan", stop)
+    asyncio.run(worker.run_job(job))
+    assert calls == ["release0", "load3"]
+    assert worker.store.get_job(job.id).status is JobStatus.CANCELLED
+    assert manager.device_index == 0 and manager.state()["device_index"] == 3
+    assert manager.state()["lifecycle"] == "IDLE" and worker._job_device_index is None
+
+
 @pytest.mark.parametrize("visible, index, expected", [("3,1", 1, "1"), ("GPU-a,GPU-b", 0, "GPU-a"), (None, 1, "1")])
 def test_transcription_child_preserves_parent_cuda_index_mapping(runtime_manager, monkeypatch, tmp_path, visible, index, expected):
     from services.yue2_worker.adapters import transcription

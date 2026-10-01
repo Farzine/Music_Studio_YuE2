@@ -27,6 +27,7 @@ export const keys = {
   modelRecommendation: ["model-recommendation"] as const,
   modelDownloads: ["model-downloads"] as const,
   models: ["models"] as const,
+  taskOptions: ["task-options"] as const,
   modelInspection: (id: string) => ["model-inspection", id] as const,
   modelCommand: (id: string) => ["model-command", id] as const,
   queue: ["queue"] as const,
@@ -41,7 +42,8 @@ export const keys = {
   log: (id: string) => ["log", id] as const,
 };
 
-export const useSchema = () => useQuery({ queryKey: keys.schema, queryFn: api.schema, staleTime: 60_000 });
+export const useSchema = (deviceIndex?: number) => useQuery({ queryKey: deviceIndex == null ? keys.schema : [...keys.schema, deviceIndex],
+  queryFn: () => api.schema(deviceIndex), staleTime: 60_000 });
 export const useCapabilities = () =>
   useQuery({ queryKey: keys.capabilities, queryFn: api.capabilities, staleTime: 30_000 });
 export const usePresets = () => useQuery({ queryKey: keys.presets, queryFn: api.presets, staleTime: 60_000 });
@@ -58,7 +60,7 @@ export function useGpus() {
   const status = query.data?.switch_command?.status;
   useEffect(() => {
     if (status === "succeeded" || status === "failed") {
-      for (const key of [keys.system, keys.modelRecommendation, keys.capabilities, keys.schema]) {
+      for (const key of [keys.system, keys.modelRecommendation, keys.capabilities, keys.schema, keys.taskOptions]) {
         client.invalidateQueries({ queryKey: key });
       }
     }
@@ -76,6 +78,9 @@ export const useModelDownloads = () =>
 export const useModels = () =>
   useQuery({ queryKey: keys.models, queryFn: api.models, refetchInterval: 3_000 });
 
+export const useTaskOptions = (model: Record<string, unknown>) =>
+  useQuery({ queryKey: [...keys.taskOptions, model], queryFn: () => api.taskOptions({ model }), refetchInterval: 5_000 });
+
 export function useModelCommand(id?: string) {
   const client = useQueryClient();
   const query = useQuery({ queryKey: keys.modelCommand(id ?? ""), queryFn: () => api.modelRuntimeCommand(id!), enabled: !!id,
@@ -83,7 +88,7 @@ export function useModelCommand(id?: string) {
   const status = query.data?.status;
   useEffect(() => {
     if (status === "succeeded" || status === "failed") {
-      for (const key of [keys.models, keys.system, keys.gpus, keys.health, keys.capabilities, keys.schema, keys.modelRecommendation]) {
+      for (const key of [keys.models, keys.system, keys.gpus, keys.health, keys.capabilities, keys.schema, keys.modelRecommendation, keys.taskOptions]) {
         client.invalidateQueries({ queryKey: key });
       }
     }

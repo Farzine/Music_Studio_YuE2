@@ -306,7 +306,7 @@ class Worker:
 
     async def _run_job(self, job: GenerationJob) -> None:
         self._current = job
-        self._job_device_index = self.manager.device_index
+        self._job_device_index = job.config.model.device_index if job.config.model.device_index is not None else self.manager.device_index
         is_gguf = is_gguf_model(self.manager.resolve_model(job.config))
         backend = AudioCppBackend(self.settings, self.store, self._job_device_index) if is_gguf else self.backend
         self._active_backend = backend

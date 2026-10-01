@@ -31,7 +31,7 @@ function Metadata({ model }: { model: ModelEntry }) {
     Size: model.bytes == null ? "Unknown" : formatBytes(model.bytes),
     Architecture: model.architecture,
     Backend: model.backend,
-    "VAE requirement": model.role === "vae" ? "Not applicable (VAE)" : "Unknown; check task compatibility",
+    "VAE requirement": model.role === "vae" ? "Not applicable (VAE)" : model.vae_requirements ?? "Unknown",
     Compatibility: model.compatibility_status,
     Installed: model.created_at == null ? "Unknown" : formatDateTime(model.created_at),
   };
@@ -57,7 +57,7 @@ export default function InstalledModelsPage() {
   const activeCommand = !!commandId && (!command.data || ["queued", "running"].includes(command.data.status));
   const busy = mutation.isPending || activeCommand;
   const refresh = async () => {
-    await Promise.all([keys.models, keys.capabilities, keys.schema, keys.health, keys.modelRecommendation]
+    await Promise.all([keys.models, keys.capabilities, keys.schema, keys.health, keys.modelRecommendation, keys.taskOptions]
       .map((queryKey) => client.invalidateQueries({ queryKey })));
   };
   const requestAction = (model: ModelEntry, operation: "load" | "unload") => mutation.mutate(async () => {

@@ -30,7 +30,7 @@ export function ModelDownloadJobs() {
     const signature = (downloads.data?.items ?? []).filter((item) => item.status === "complete").map((item) => item.id).join(",");
     if (signature && signature !== completed.current) {
       completed.current = signature;
-      for (const queryKey of [keys.models, keys.capabilities, keys.schema, keys.health, keys.modelRecommendation]) client.invalidateQueries({ queryKey });
+      for (const queryKey of [keys.models, keys.capabilities, keys.schema, keys.health, keys.modelRecommendation, keys.taskOptions]) client.invalidateQueries({ queryKey });
     }
   }, [client, downloads.data]);
   const error = mutation.error;

@@ -395,9 +395,9 @@ class SystemInfoService:
 
     def vram_risk(self, requested_seconds: float, decoder_mode: str, budget_gib: float,
                   *, model: str = "default", vae: str = "standard", offload_ar: bool = False,
-                  compute_backend: str = "torch") -> dict | None:
+                  compute_backend: str = "torch", device_index: int | None = None) -> dict | None:
         """Project the same model estimate into the existing task warning API."""
-        recommendation = self.model_recommendation(vae=vae, offload_ar=offload_ar,
+        recommendation = self.model_recommendation(vae=vae, offload_ar=offload_ar, device_index=device_index,
                                                   compute_backend=compute_backend, memory_budget_gib=budget_gib)
         reference = resolve_model_reference(model, self.settings)
         item = next((m for m in recommendation["items"] if reference in [m["id"], *m.get("aliases", [])]), None)

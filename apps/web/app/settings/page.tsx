@@ -5,6 +5,7 @@ import Link from "next/link";
 import * as React from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { LocalModelBrowser } from "@/components/settings/local-model-browser";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
@@ -41,6 +42,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      <LocalModelBrowser />
       <Card id="model-downloads">
         <CardHeader>
           <CardTitle>Music models</CardTitle>

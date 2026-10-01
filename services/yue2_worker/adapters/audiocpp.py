@@ -11,7 +11,7 @@ import numpy as np
 import soundfile as sf
 from yue2_studio_core.errors import ErrorCode, StudioError
 from yue2_studio_core.manifest import identity
-from yue2_studio_core.model_metadata import audiocpp_available, read_model_metadata, resolve_model_reference
+from yue2_studio_core.model_metadata import audiocpp_available, read_model_metadata, resolve_model_reference, selected_vae_error
 from yue2_studio_core.models import GenerationConfig, GenerationMode, JobStatus
 from yue2_studio_core.parameters import gguf_unsupported_parameters
 from yue2_studio_core.settings import Settings
@@ -40,6 +40,9 @@ class AudioCppBackend:
         return {"backend": self.name, "modes": ["full", "melody", "off", "score_edit"]}
 
     async def validate_config(self, config: GenerationConfig) -> list[str]:
+        root = resolve_model_reference(config.model.checkpoint, self.settings)
+        if problem := selected_vae_error({"id": root, "format": "gguf"}, config.model.vae, self.settings):
+            raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, problem, stage="validation")
         unsupported = gguf_unsupported_parameters(config)
         if config.prompt.mode is GenerationMode.COVER:
             unsupported.append("cover mode")

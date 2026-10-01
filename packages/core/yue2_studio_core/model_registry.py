@@ -103,7 +103,12 @@ class ModelRegistry:
             if not directory.is_dir():
                 continue
             if (directory / "studio-model.json").is_file():
-                candidates.append((str(directory), "model", False))
+                try:
+                    from .model_metadata import read_model_metadata
+                    role = read_model_metadata(str(directory)).get("role", "model")
+                except (OSError, ValueError):
+                    role = "model"  # retain the corrupt descriptor and its actionable error
+                candidates.append((str(directory), role, False))
                 continue
             try:
                 config = json.loads((directory / "config.json").read_text(encoding="utf-8"))
@@ -256,7 +261,8 @@ class ModelRegistry:
                 write_json_atomic(self.path, document.model_dump(mode="json"))
             return self._attach(descriptor, record)
 
-    def install_verified(self, reference: str, report: ValidationReport, *, staging: Path | None = None) -> ModelMetadata:
+    def install_verified(self, reference: str, report: ValidationReport, *, staging: Path | None = None,
+                         role: Literal["model", "vae"] = "model") -> ModelMetadata:
         """Publish complete content and its validation under the inventory lock.
 
         The caller holds the destination's exclusive file lease. A same-volume
@@ -273,11 +279,11 @@ class ModelRegistry:
                 if staging is not None:
                     staging.rename(destination)
                     moved = True
-                report.registry_id = _identity(str(destination.resolve()), "model")
+                report.registry_id = _identity(str(destination.resolve()), role)
                 if file_fingerprint(destination, report.files) != report.fingerprint:
                     raise ValidationError("Downloaded files changed after verification; retry the download.")
                 write_json_atomic(self.store.root / "model-validations" / f"{report.registry_id}.json", report.model_dump(mode="json"))
-                descriptor = self._validated(describe_model_files(str(destination), "model").model_copy(
+                descriptor = self._validated(describe_model_files(str(destination), role).model_copy(
                     update={"registry_id": report.registry_id}))
                 record = self._upsert(document, descriptor)
                 write_json_atomic(self.path, document.model_dump(mode="json"))

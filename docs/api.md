@@ -237,10 +237,37 @@ unprofiled memory rather than claiming the tiled estimate covers it. See
 | `POST` | `/api/v1/models/{registry_id}/validate` | Structural validation; JSON body `{"verify_checksum": false}`. `true` also checks weight SHA-256 expectations where provided. |
 | `GET` | `/api/v1/models/{registry_id}/deletion-preview` | Exact paths/files, estimated reclaimed space, blockers and confirmation token. |
 | `DELETE` | `/api/v1/models/{registry_id}` | JSON body requires `confirmation_token` and `confirmed_path` from the preview. |
-| `GET` | `/api/v1/generation/schema` | The parameter registry annotated for the active backend. The frontend renders forms from this. |
+| `GET` | `/api/v1/generation/schema` | Parameter registry for the active backend; optional `device_index` evaluates precision capabilities on the task GPU without changing worker selection. |
+| `POST` | `/api/v1/generation/options` | Partial GenerationConfig body. Backend-ranked model choices, compatible VAE choices, worker-visible GPU choices, blockers and `valid`; read only. |
+| `GET` | `/api/v1/models/local/browse` | Optional absolute `path`; without it, returns allowed host model roots. Directory metadata only, bounded to 1000 entries. |
+| `POST` | `/api/v1/models/local/validate` | `{"path": "/allowed/model/path", "kind": "file"}` (or `directory`). Checks containment, existence and type; model files must be safetensors/GGUF. |
+| `POST` | `/api/v1/models/local/register` | Same body; imports an existing installation without moving it or claiming successful validation/loading. File selection must identify its primary weights. |
 | `GET` | `/api/v1/generation/workflow-mapping` | The generated ComfyUI mapping, for the technical drawer. |
 | `POST` | `/api/v1/generation/estimate` | Token budget for a request, before it is queued. Takes the same partial config a generation does. |
 | `GET` | `/api/v1/generation/limits` | The active checkpoint's own limits, and where each number came from. |
+
+Task configuration stores `model.checkpoint`, `model.vae` and optional
+`model.device_index` independently. New native UI submissions record the displayed
+GPU index; legacy requests with a null/absent index follow the worker default at
+claim time. Explicit indices require a visible selectable CUDA device and do not
+change the System default. Mock/remote backends use a backend-managed null choice.
+Worker placement, precision checks and VRAM estimates use the captured task GPU.
+GPU indices are worker CUDA indices, including CUDA visibility remapping.
+
+Options retain unavailable selections and explain blockers; they do not replace
+the task model or VAE. Native VAE options compare declared latent widths. GGUF
+offers the exact bundled F16 VAE path; older API requests using `standard` remain
+accepted. Foreign/native VAE selections are refused for GGUF in API and worker.
+Existing GGUF API admission behavior is preserved, including mock test requests;
+new task UI options offer GGUF only for the local native audio.cpp worker.
+
+Host browsing is limited to model storage, existing configured local model/VAE
+directories and explicitly trusted `MODEL_BROWSER_ROOTS`. Hidden staging paths
+and symlink escapes are refused; listings skip symlinks. Arbitrary file contents
+are never served. Path validation does not validate model structures/checksums.
+Registration does not update `.env` or the download destination; inspect/validate
+the installation through Models afterward. Model metadata includes nullable
+`vae_requirements`.
 
 Model inventory includes `download_status`, `files_complete`,
 `validation_status`, `registration_status`, `compatibility_status`,

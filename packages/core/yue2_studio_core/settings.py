@@ -34,6 +34,7 @@ class Settings(BaseSettings):
 
     yue2_model_path: str = "./models/YuE2-3B"
     yue2_models_dir: str = "./models"
+    model_browser_roots: list[str] = []  # additional trusted roots; JSON array in .env
     yue2_vae_path: str = "./models/YuE2-Vae"
     yue2_vae_legacy_path: str = "./models/YuE2-Vae-legacy"
     sheetsage2_model_path: str = "./models/SheetSage2"

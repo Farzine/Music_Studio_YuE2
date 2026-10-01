@@ -280,6 +280,7 @@ export interface ModelEntry {
   backend: string | null;
   tensor_element_count: number | null;
   checksum_sha256: string | null;
+  vae_requirements: string | null;
   download_status: "missing" | "downloaded" | "unknown";
   files_complete: boolean;
   validation_status: "not_validated" | "validated" | "failed";
@@ -291,6 +292,34 @@ export interface ModelEntry {
   currently_loaded: boolean | null;
   runtime?: ModelRuntime[];
   runtime_actions?: Record<"load" | "unload", { allowed: boolean; reason: string | null }>;
+}
+
+export interface TaskChoice {
+  value: string | number | null;
+  label: string;
+  enabled: boolean;
+  disabled_reason: string | null;
+  format?: string;
+  assessment?: ModelAssessment | null;
+}
+
+export interface TaskOptions {
+  models: TaskChoice[];
+  vaes: TaskChoice[];
+  gpus: TaskChoice[];
+  backend: string;
+  selected_device_index: number;
+  issues: string[];
+  valid: boolean;
+  vae_requirement: string;
+}
+
+export interface LocalPathListing {
+  roots: string[];
+  path: string | null;
+  parent: string | null;
+  items: { name: string; path: string; kind: "file" | "directory"; bytes: number | null }[];
+  truncated: boolean;
 }
 
 export interface ModelRuntime {

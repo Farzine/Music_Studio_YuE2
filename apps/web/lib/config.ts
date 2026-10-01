@@ -38,6 +38,15 @@ export function deepMerge(base: ConfigObject, overrides: ConfigObject): ConfigOb
   return result;
 }
 
+/** Presets/reset change settings while retaining explicit task resource choices. */
+export function preserveTaskSelection(next: ConfigObject, current: ConfigObject): ConfigObject {
+  for (const key of ["model.checkpoint", "model.vae", "model.device_index"]) {
+    const value = getPath(current, key);
+    if (value !== undefined) next = setPath(next, key, value);
+  }
+  return next;
+}
+
 /** Fields that differ from the defaults, as dotted paths. Used by the diff view. */
 export function changedPaths(defaults: ConfigObject, current: ConfigObject, prefix = ""): string[] {
   const paths: string[] = [];

@@ -30,6 +30,7 @@ export function ModelDownloads({ initialRepo, initialRevision, initialFile }: {
   const [inspection, setInspection] = React.useState<HubInspection | null>(null);
   const [revisions, setRevisions] = React.useState<HubInspection["revisions"]>([]);
   const [mode, setMode] = React.useState<ModelDownloadMode>("single");
+  const [role, setRole] = React.useState("model");
   const [selectedFiles, setSelectedFiles] = React.useState<string[]>([]);
   const selectionKey = downloadSelectionKey(repoId, revision, filename, mode, selectedFiles, deviceIndex);
   const [previewResult, setPreviewResult] = React.useState<{ key: string; preview: HubPreview }>();
@@ -37,7 +38,7 @@ export function ModelDownloads({ initialRepo, initialRevision, initialFile }: {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<Error | null>(null);
   const [accepted, setAccepted] = React.useState<string>();
-  const files = inspection?.candidates.filter((candidate) => candidate.model.role === "model") ?? [];
+  const files = inspection?.candidates.filter((candidate) => candidate.model.role === role) ?? [];
   const resetSource = () => { setInspection(null); setPreviewResult(undefined); setFilename(""); setSelectedFiles([]); setError(null); setAccepted(undefined); };
   const fail = (cause: unknown) => setError(cause instanceof Error ? cause : new Error("The operation failed. Check the API connection and retry."));
 
@@ -46,7 +47,7 @@ export function ModelDownloads({ initialRepo, initialRevision, initialFile }: {
     try {
       const result = await api.inspectModelRepo(repoId.trim(), revision.trim(), deviceIndex);
       setInspection(result); setRevisions(result.revisions);
-      const models = result.candidates.filter((candidate) => candidate.model.role === "model");
+      const models = result.candidates.filter((candidate) => candidate.model.role === role);
       if (!filename && models.length === 1) setFilename(models[0].model.filename ?? "");
     } catch (cause) { fail(cause); }
     finally { setBusy(false); }
@@ -75,6 +76,8 @@ export function ModelDownloads({ initialRepo, initialRevision, initialFile }: {
     {error ? <ErrorNotice message={error.message} guidance={error instanceof ApiRequestError ? error.guidance : undefined} /> : null}
     <Card><CardHeader><CardTitle>1 · Discover &amp; inspect</CardTitle><CardDescription>Enter a repository and branch, tag or commit. Inspection resolves an immutable commit so downloads use the exact files you reviewed.</CardDescription></CardHeader>
       <CardContent className="space-y-4">
+        <Field label="Resource type" htmlFor="download-resource"><select id="download-resource" value={role} disabled={busy} onChange={(event) => { setRole(event.target.value); setFilename(""); setSelectedFiles([]); setPreviewResult(undefined); }}
+          className="rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-canvas)] p-2 text-sm"><option value="model">Inference model</option><option value="vae">Native VAE</option></select></Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Hugging Face repository" htmlFor="hf-repo" description="Owner/repository, for example audio-cpp/Yue2-3B-GGUF">
             <Input id="hf-repo" disabled={busy} value={repoId} onChange={(event) => { resetSource(); setRevisions([]); setRepoId(event.target.value); }} placeholder="owner/repository" /></Field>
@@ -96,16 +99,16 @@ export function ModelDownloads({ initialRepo, initialRevision, initialFile }: {
           <p className="break-all">Resolved commit: {inspection.revision}</p>
           {inspection.description ? <p className="whitespace-pre-wrap break-words">{inspection.description}</p> : null}
           {inspection.warnings.map((warning) => <p key={warning} className="text-[var(--color-warn)]">{warning}</p>)}
-          {!files.length ? <p>No inference-model weight candidates found in this revision. VAE downloads are managed separately.</p> : null}
+          {!files.length ? <p>No {role === "vae" ? "VAE" : "inference model"} weight candidates found in this revision. Change the resource type to inspect other weights.</p> : null}
           <details><summary className="cursor-pointer">Branches, tags &amp; repository files</summary>
             <ul className="mt-2 max-h-64 space-y-1 overflow-auto">{inspection.revisions.map((ref) => <li key={`${ref.kind}:${ref.name}`} className="break-all">{ref.kind}: {ref.name} · {ref.commit_hash}</li>)}
               {inspection.files.map((file) => <li key={file.name} className="break-all">{file.name} · {file.extension || "No extension"} · {file.bytes == null ? "Unknown size" : formatBytes(file.bytes)}</li>)}</ul></details>
         </div> : null}
       </CardContent>
     </Card>
-    <Card><CardHeader><CardTitle>2 · Select content</CardTitle><CardDescription>Select the primary inference model and the files to install. Recognized related files are included by default; a complete repository can include several alternate weights.</CardDescription></CardHeader>
+    <Card><CardHeader><CardTitle>2 · Select content</CardTitle><CardDescription>Select the primary model or native VAE and its related files. GGUF inference uses the bundled F16 VAE. A complete repository can include several alternate weights.</CardDescription></CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2"><Field label="Primary model filename" htmlFor="hf-file" description="Choose a weight file below or enter its exact repository path.">
+        <div className="grid gap-4 sm:grid-cols-2"><Field label={role === "vae" ? "Primary VAE filename" : "Primary model filename"} htmlFor="hf-file" description="Choose a weight file below or enter its exact repository path.">
           <Input id="hf-file" disabled={busy || !inspection} value={filename} onChange={(event) => { setPreviewResult(undefined); setFilename(event.target.value); }} placeholder="yue2-3b-q4_0.gguf" /></Field>
           <Field label="Download content" htmlFor="hf-mode"><select id="hf-mode" value={mode} disabled={busy || !inspection} onChange={(event) => { setMode(event.target.value as ModelDownloadMode); setPreviewResult(undefined); }}
             className="w-full rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-canvas)] p-2 text-sm">

@@ -83,7 +83,7 @@ class CapabilityService:
                 return entry
         return None
 
-    def runtime_probe(self) -> dict:
+    def runtime_probe(self, device_index: int | None = None) -> dict:
         """What is actually installed on this machine, checked each time.
 
         Not cached: the cover workflow can be installed while the API is
@@ -94,7 +94,7 @@ class CapabilityService:
         worker_venv = Path(self.settings._resolve(".venv-yue2"))
         sheetsage2_model = self.settings.sheetsage2_path
         inventory = SystemInfoService(self.settings, self.registry.store, FilesystemJobQueue(self.registry.store)).devices()
-        selected = next((d for d in inventory["devices"] if d["index"] == inventory["selected_index"]
+        selected = next((d for d in inventory["devices"] if d["index"] == (inventory["selected_index"] if device_index is None else device_index)
                          and d.get("selectable") and d.get("cuda_available")), {})
         compute = None
         if selected.get("compute_capability"):
@@ -121,15 +121,15 @@ class CapabilityService:
             "worker_venv": str(worker_venv) if worker_venv.is_dir() else None,
             "vllm_installed": worker_venv.is_dir() and _venv_has_package(worker_venv, "vllm"),
             "compute_capability": compute,
-            "device_index": inventory["selected_index"],
+            "device_index": inventory["selected_index"] if device_index is None else device_index,
         }
 
     # -- capability assembly ---------------------------------------------- #
 
-    def capabilities(self, backend: str | None = None) -> dict:
+    def capabilities(self, backend: str | None = None, device_index: int | None = None) -> dict:
         backend = backend or self.settings.yue2_backend
         document = backend_capabilities(backend)
-        probe = self.runtime_probe()
+        probe = self.runtime_probe() if device_index is None else self.runtime_probe(device_index)
         entries = document["capabilities"]
 
         def set_state(name: str, supported: bool, reason: str | None = None, note: str | None = None) -> None:
@@ -217,10 +217,10 @@ class CapabilityService:
         document["models"] = self.local_models()
         return document
 
-    def schema(self, backend: str | None = None) -> dict:
+    def schema(self, backend: str | None = None, device_index: int | None = None) -> dict:
         from yue2_studio_core.models import DEFAULT_MODEL
 
-        capabilities = self.capabilities(backend)
+        capabilities = self.capabilities(backend) if device_index is None else self.capabilities(backend, device_index)
         default = next(entry for entry in capabilities["models"]
                        if entry["role"] == "model" and entry["is_default"])
         options = [

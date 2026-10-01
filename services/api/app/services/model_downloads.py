@@ -129,6 +129,7 @@ class ModelDownloads:
             job = {
                 "schema_version": 2, "id": new_id("mdl"), "repo_id": repo_id, "filename": filename,
                 "revision": plan["revision"], "requested_revision": revision or "main", "mode": mode,
+                "role": plan["candidate"]["model"].get("role", "model"),
                 "selection_identity": plan["selection_identity"],
                 "files": [{**f, "downloaded_bytes": 0} for f in plan["files"]],
                 "status": "queued", "error": None, "path": None, "destination": plan["destination"],
@@ -176,6 +177,7 @@ class ModelDownloads:
                 inspection = self.hub.inspect(job["repo_id"], job["revision"])
                 plan = self.hub.preview(inspection, job["filename"])
                 job.update(revision=plan["revision"], mode="single", destination=plan["destination"],
+                           role=plan["candidate"]["model"].get("role", "model"),
                            selection_identity=plan["selection_identity"],
                            files=[{**f, "downloaded_bytes": 0} for f in plan["files"]])
             transition_download(job, "queued")
@@ -315,8 +317,8 @@ class ModelDownloads:
                         raise ConflictError(f"Existing installation has invalid {file['name']}. Inspect/delete it explicitly before retrying; it was left unchanged.")
                     raise
             if root == stage:
-                write_json_atomic(root / "studio-model.json", {"repo_id": job["repo_id"], "revision": job["revision"], "filename": job["filename"]})
-            entry = describe_model_files(str(root), "model").model_copy(update={"registry_id": "pending_download"})
+                write_json_atomic(root / "studio-model.json", {"repo_id": job["repo_id"], "revision": job["revision"], "filename": job["filename"], "role": job.get("role", "model")})
+            entry = describe_model_files(str(root), job.get("role", "model")).model_copy(update={"registry_id": "pending_download"})
             report = validate_installation(entry, verify_checksum=entry.files_complete)
             # Missing sidecars / an unsupported architecture can be managed as
             # complete downloads. Corrupt structures in complete packages cannot.
@@ -326,7 +328,7 @@ class ModelDownloads:
             transition_download(job, "registering")
             job.update(validation_status=report.validation_status, current_file=None)
             self._write(job)
-            installed = self.registry.install_verified(str(destination), report, staging=stage if root == stage else None)
+            installed = self.registry.install_verified(str(destination), report, staging=stage if root == stage else None, role=entry.role)
             transition_download(job, "complete")
             job.update(path=str(destination), registry_id=installed.registry_id, validation_status=installed.validation_status,
                        inference_status=installed.inference_status, current_file=None, partial_bytes=0, force_download_files=[])

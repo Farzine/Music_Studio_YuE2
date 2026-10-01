@@ -141,6 +141,13 @@ def list_models(capabilities: CapabilityService = Depends(capability_provider),
     return {"items": models.inventory_runtime(capabilities.local_models(), system.worker_state())}
 
 
+@router.post("/generation/options")
+def generation_options(config: GenerationConfig, capabilities: CapabilityService = Depends(capability_provider),
+                       system: SystemInfoService = Depends(system_info_provider)) -> dict:
+    from app.services.task_selection import task_options
+    return task_options(config, capabilities, system)
+
+
 @router.get("/models/capabilities")
 def model_capabilities(
     backend: str | None = Query(None),
@@ -160,6 +167,29 @@ class DeleteRequest(BaseModel):
 
 class LoadRequest(BaseModel):
     config: GenerationConfig | None = None
+
+
+class LocalPathRequest(BaseModel):
+    path: str
+    kind: Literal["file", "directory"]
+
+
+@router.get("/models/local/browse")
+def browse_local(path: str | None = None, models: ModelService = Depends(model_service_provider)) -> dict:
+    from app.services.local_paths import LocalPaths
+    return LocalPaths(models.settings, models.registry).browse(path)
+
+
+@router.post("/models/local/validate")
+def validate_local(payload: LocalPathRequest, models: ModelService = Depends(model_service_provider)) -> dict:
+    from app.services.local_paths import LocalPaths
+    return LocalPaths(models.settings, models.registry).validate(payload.path, payload.kind)
+
+
+@router.post("/models/local/register")
+def register_local(payload: LocalPathRequest, models: ModelService = Depends(model_service_provider)) -> dict:
+    from app.services.local_paths import LocalPaths
+    return LocalPaths(models.settings, models.registry).register(payload.path, payload.kind)
 
 
 @router.get("/models/runtime-commands/{command_id}")
@@ -203,9 +233,10 @@ def delete_model(registry_id: str, payload: DeleteRequest, models: ModelService 
 @router.get("/generation/schema")
 def generation_schema(
     backend: str | None = Query(None),
+    device_index: int | None = Query(None, ge=0, le=31),
     capabilities: CapabilityService = Depends(capability_provider),
 ) -> dict:
-    return capabilities.schema(backend)
+    return capabilities.schema(backend, device_index)
 
 
 @router.post("/generation/estimate")

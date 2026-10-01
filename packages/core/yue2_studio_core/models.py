@@ -190,6 +190,7 @@ class ModelConfig(BaseModel):
     revision: str | None = None
     vae: str = Field(default="standard", description="standard | legacy | path | repo id")
     vae_revision: str | None = None
+    device_index: int | None = Field(default=None, ge=0, le=31, description="Task CUDA device; null follows the worker selection")
     compute_backend: Literal["torch", "torch-eager", "vllm"] = "torch"
     quantization: Literal["none", "fp8"] = "none"
     offload_ar: bool = False

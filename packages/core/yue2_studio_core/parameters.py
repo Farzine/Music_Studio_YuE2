@@ -129,7 +129,7 @@ def gguf_unsupported_parameters(config: GenerationConfig) -> list[str]:
     """Controls that audio.cpp cannot honor when changed from studio defaults."""
     defaults = GenerationConfig()
     keys = (
-        "model.revision", "model.vae", "model.vae_revision", "model.compute_backend",
+        "model.revision", "model.vae_revision", "model.compute_backend",
         "model.quantization", "model.offload_ar", "model.memory_budget_gib",
         "model.local_files_only", "decoder.mode", "decoder.tile_frames",
     )

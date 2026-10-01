@@ -4,7 +4,6 @@ import { RotateCcw } from "lucide-react";
 import * as React from "react";
 
 import { ParameterField } from "@/components/generation/parameter-field";
-import { ModelSelector } from "@/components/settings/model-selector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/controls";
@@ -13,6 +12,7 @@ import type { GenerationSchema } from "@/types/api";
 
 /** Handled by the Create screen itself rather than the settings accordion. */
 const PRIMARY = new Set([
+  "model.checkpoint", "model.vae", "model.device_index",
   "prompt.style",
   "prompt.lyrics",
   "prompt.mode",
@@ -40,7 +40,6 @@ export function AdvancedSettings({
   config,
   defaults,
   onChange,
-  loading,
   gguf = false,
 }: {
   schema: GenerationSchema;
@@ -113,18 +112,6 @@ export function AdvancedSettings({
               <div className="grid gap-5 sm:grid-cols-2">
                 {group.parameters.map((parameter) => {
                   const wide = ["text", "abc", "upload"].includes(parameter.type);
-                  if (parameter.key === "model.checkpoint") {
-                    return (
-                      <div key={parameter.key} className="sm:col-span-2">
-                        <ModelSelector
-                          parameter={parameter}
-                          loading={loading}
-                          value={(getPath(config, parameter.key) as string) ?? "default"}
-                          onChange={(next) => onChange(setPath(config, parameter.key, next))}
-                        />
-                      </div>
-                    );
-                  }
                   return (
                     <div key={parameter.key} className={wide ? "sm:col-span-2" : undefined}>
                       <ParameterField

@@ -8,6 +8,7 @@ import * as React from "react";
 import { type UploadedAudio } from "@/components/audio/audio-uploader";
 import { BudgetPanel } from "@/components/generation/budget-panel";
 import { PromptFields } from "@/components/generation/prompt-fields";
+import { TaskSelectors } from "@/components/settings/task-selectors";
 import { AdvancedSettings } from "@/components/settings/advanced-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   useProjectActions,
   useProjectConfig,
   useSchema,
+  useTaskOptions,
 } from "@/hooks/use-queries";
 import { ApiRequestError } from "@/lib/api";
 import { changedPaths, deepMerge, getPath, setPath, type ConfigObject } from "@/lib/config";
@@ -40,7 +42,6 @@ export default function ProjectSettingsPage() {
 
   const { data: project, isLoading: projectLoading } = useProject(projectId);
   const { data: loaded, isLoading: configLoading } = useProjectConfig(projectId);
-  const { data: schema } = useSchema();
   const { data: capabilities } = useCapabilities();
   const { data: presetData } = usePresets();
   const { updateConfig } = useProjectActions();
@@ -61,6 +62,9 @@ export default function ProjectSettingsPage() {
     [defaults, config],
   );
 
+  const { data: schema } = useSchema(getPath(effective, "model.device_index") as number | undefined);
+  const resources = useTaskOptions((effective.model ?? {}) as Record<string, unknown>);
+
   const { data: tokenBudget } = useBudgetEstimate(effective, Boolean(config));
   const dirty = React.useMemo(
     () => (starting && config ? changedPaths(starting, config).length > 0 : false),
@@ -76,8 +80,10 @@ export default function ProjectSettingsPage() {
     if (!projectId || !config) return;
     setError(null);
     try {
-      await updateConfig.mutateAsync({ id: projectId, config: effective as Record<string, unknown> });
+      await updateConfig.mutateAsync({ id: projectId, config: (resources.data?.backend === "native" && getPath(effective, "model.device_index") == null
+        ? setPath(effective, "model.device_index", resources.data.selected_device_index) : effective) as Record<string, unknown> });
       setSaved(true);
+      return true;
     } catch (saveError) {
       setError(
         saveError instanceof ApiRequestError ? saveError.message : "The settings could not be saved.",
@@ -86,8 +92,8 @@ export default function ProjectSettingsPage() {
   };
 
   const saveAndGenerate = async () => {
-    await save();
-    if (projectId) router.push(`/create?project=${projectId}`);
+    const success = await save();
+    if (success && projectId) router.push(`/create?project=${projectId}`);
   };
 
   if (projectLoading || configLoading || !schema || !config || !defaults) {
@@ -95,7 +101,7 @@ export default function ProjectSettingsPage() {
   }
 
   const style = (getPath(effective, "prompt.style") as string) ?? "";
-  const canSave = style.trim().length > 0;
+  const canSave = style.trim().length > 0 && resources.data?.valid === true && !resources.error && !resources.isFetching;
 
   return (
     <div className="space-y-5 pb-24 lg:pb-0">
@@ -136,6 +142,8 @@ export default function ProjectSettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          <TaskSelectors config={effective} options={resources.data} error={resources.error} pending={resources.isLoading}
+            onChange={update} />
           <PromptFields
             schema={schema}
             config={effective}
@@ -203,7 +211,7 @@ export default function ProjectSettingsPage() {
           Discard changes
         </Button>
         {!canSave ? (
-          <p className="text-xs text-[var(--color-ink-faint)]">A style description is required.</p>
+          <p className="text-xs text-[var(--color-ink-faint)]">{resources.data?.issues[0] ?? "A style description and valid Model, VAE and GPU are required."}</p>
         ) : null}
       </div>
     </div>

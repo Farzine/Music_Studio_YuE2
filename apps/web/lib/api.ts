@@ -16,6 +16,8 @@ import type {
   ModelInspection,
   ModelDeletionPreview,
   ModelRuntimeCommand,
+  TaskOptions,
+  LocalPathListing,
   Preset,
   ProjectConfigResponse,
   ProjectDeleteReport,
@@ -116,12 +118,16 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ device_index: deviceIndex }),
     }),
-  vramEstimate: (seconds: number, decoderMode: string, budget: number, model = "default", vae = "standard", offloadAr = false, computeBackend = "torch") =>
+  vramEstimate: (seconds: number, decoderMode: string, budget: number, model = "default", vae = "standard", offloadAr = false, computeBackend = "torch", deviceIndex?: number) =>
     request<{ warning: { message: string; estimate_gib: number; available_gib: number } | null }>(
-      `/api/v1/system/vram-estimate?${new URLSearchParams({ seconds: String(seconds), decoder_mode: decoderMode, budget_gib: String(budget), model, vae, offload_ar: String(offloadAr), compute_backend: computeBackend })}`,
+      `/api/v1/system/vram-estimate?${new URLSearchParams({ seconds: String(seconds), decoder_mode: decoderMode, budget_gib: String(budget), model, vae, offload_ar: String(offloadAr), compute_backend: computeBackend, ...(deviceIndex == null ? {} : { device_index: String(deviceIndex) }) })}`,
     ),
 
-  schema: () => request<GenerationSchema>("/api/v1/generation/schema"),
+  schema: (deviceIndex?: number) => request<GenerationSchema>(`/api/v1/generation/schema${deviceIndex == null ? "" : `?device_index=${deviceIndex}`}`),
+  taskOptions: (config: Record<string, unknown>) => request<TaskOptions>("/api/v1/generation/options", { method: "POST", body: JSON.stringify(config) }),
+  browseLocalModels: (path?: string) => request<LocalPathListing>(`/api/v1/models/local/browse${path ? `?${new URLSearchParams({ path })}` : ""}`),
+  validateLocalModelPath: (path: string, kind: "file" | "directory") => request<{ path: string; kind: string; exists: boolean }>("/api/v1/models/local/validate", { method: "POST", body: JSON.stringify({ path, kind }) }),
+  registerLocalModel: (path: string, kind: "file" | "directory") => request<{ model: ModelEntry }>("/api/v1/models/local/register", { method: "POST", body: JSON.stringify({ path, kind }) }),
   estimateBudget: (config: Record<string, unknown>) =>
     request<BudgetResponse>("/api/v1/generation/estimate", {
       method: "POST",

@@ -20,7 +20,8 @@ make install-audiocpp
 The build is pinned to audio.cpp `v0.8.2` and needs CMake, a C++ compiler, and
 the CUDA toolkit. If you already have a compatible CLI, set
 `AUDIOCPP_CLI_PATH=/absolute/path/to/audiocpp_cli` in `.env` and restart the
-worker. A GGUF job runs the CLI on the GPU selected on the System page. The
+worker. A GGUF job runs the CLI on its task GPU, or the System default for legacy
+requests without a task device. The
 process exits after the job, releasing its GPU allocation. The native PyTorch
 model remains available for other jobs and is unloaded before a GGUF job.
 
@@ -47,7 +48,7 @@ The API inventory exposes:
 | `registration_status` | `registered` for durable local records; `discovered` for unresolved repository defaults. Registration does not imply validation or loading. |
 | `compatibility_status` | Current adapter file rules say supported/incompatible, or metadata cannot be interpreted. |
 | `inference_status`, `inference_ready` | Preflight availability and its specific blocker, including a missing audio.cpp executable. |
-| `currently_loaded` | Currently `null`: inventory scanning cannot establish worker/GPU residency. |
+| `currently_loaded` | Worker-observed residency: true/false when established, null when offline, unmeasured or uncertain. Retained CPU weights differ from GPU residency. |
 | `deletion_status` | `active`, or `deleting` while an interrupted cleanup needs retry. |
 
 Preflight availability is not a successful load, checksum validation or a GPU
@@ -60,6 +61,52 @@ an unavailable model. The `default` choice resolves to the same configured
 checkpoint in the API and worker, including GGUF installations. Model and VAE
 remain separate stored fields; the current GGUF adapter still requires its
 bundled F16 VAE.
+
+## Choose task resources
+
+Create and project Settings show independent **Model**, **VAE** and **GPU**
+controls. The backend ranks available models using the selected GPU and current
+runtime scenario; estimates explain headroom and remain planning estimates.
+The VAE list contains installed decoders compatible with the chosen model's
+declared latent width. Unknown widths are not invented. Unavailable saved choices
+stay visible with a reason and block submission until corrected.
+
+Changing the model does not replace your VAE; changing the VAE does not replace
+your model. Applying a preset or resetting generation settings preserves explicit
+resource choices. The default checkpoint remains available both by its path and
+the backward-compatible `default` alias. GGUF requires selecting its package's
+bundled F16 VAE explicitly in the new UI; the older `standard` API alias still
+works. Other GGUF VAE variants cannot be substituted by this adapter.
+
+New native tasks record the displayed worker CUDA index in `model.device_index`.
+The worker releases its previous managed pipeline before allocating a different
+model/device. Task GPU selection does not change the System default. Existing
+tasks with no device field follow that default when claimed. Idle residency may
+be unloaded when the worker returns to the System default; no task has to keep
+its model loaded to remain inference-ready. Mock/remote backends manage their own
+device. Use System for an acknowledged default-device switch.
+
+## Browse an existing local installation
+
+Settings provides **Browse File** and **Browse Folder**, selected path display,
+validation, Clear and Register. Selection addresses the API host's filesystem,
+including when the browser is on another machine. An optional manual absolute
+path is supported. Selecting a path does not move weights or change the download
+destination. Registration adds the installation to Models; use Inspect/Validate
+there for structural/checksum checks. Path existence alone is not readiness.
+
+The browser exposes model storage and existing configured local model/VAE roots.
+To allow another trusted location, add a JSON array in `.env` and restart the API:
+
+```dotenv
+MODEL_BROWSER_ROOTS=["/mnt/models", "/home/user/music-models"]
+```
+
+Hidden staging/private paths and symlink escapes are refused; only names, kinds
+and sizes are listed. GGUF files require installation metadata and sidecars;
+arbitrary standalone weights are not converted into compatible packages. Native
+installations require readable configuration. Directory lists stop at 1000
+entries; enter an exact path when needed.
 
 ## Local model registry
 
@@ -208,7 +255,7 @@ uv tool run --from huggingface_hub hf download m-a-p/YuE2-Vae-legacy \
   --include config.json weights_manifest.json model.safetensors modeling_vae.py LICENSE
 ```
 
-It appears in Advanced → Model → Decoder weights as soon as the directory
+It appears in the task's separate VAE selector as soon as the directory
 exists. Until then the option is disabled and says why. Use it to reproduce the
 published benchmark protocol, not for listening.
 

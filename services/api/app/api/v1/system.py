@@ -70,7 +70,8 @@ def vram_estimate(
     offload_ar: bool = False,
     compute_backend: Literal["torch", "torch-eager", "vllm"] = "torch",
     system: SystemInfoService = Depends(system_info_provider),
+    device_index: int | None = Query(None, ge=0, le=31),
 ) -> dict:
     risk = system.vram_risk(seconds, decoder_mode, budget_gib, model=model, vae=vae,
-                            offload_ar=offload_ar, compute_backend=compute_backend)
+                            offload_ar=offload_ar, compute_backend=compute_backend, device_index=device_index)
     return {"warning": risk}
