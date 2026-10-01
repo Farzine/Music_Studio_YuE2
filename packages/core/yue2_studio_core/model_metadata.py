@@ -55,7 +55,7 @@ def model_config_compatibility(filename: str, role: str, config: dict, vae_confi
     if suffix == ".gguf" and vae_config.get("model_type") != "yue2_vae":
         return ("incompatible" if vae_config.get("model_type") else "unknown",
                 "The bundled VAE configuration does not declare yue2_vae architecture; inspect/validate the VAE metadata.")
-    if suffix == ".safetensors" and config.get("quantization_config"):
+    if suffix == ".safetensors" and (config.get("quantization_config") or config.get("quantization")):
         return "incompatible", "The native adapter does not load pre-quantized safetensors checkpoints."
     return "supported", None
 

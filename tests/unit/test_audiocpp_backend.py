@@ -16,6 +16,7 @@ from yue2_studio_core.store import Store, write_json_atomic
 
 from services.yue2_worker.adapters.audiocpp import AudioCppBackend
 from services.yue2_worker.adapters.base import GenerationContext
+from services.yue2_worker.model_manager.manager import ModelManager
 
 
 @pytest.mark.parametrize("checkpoint_choice", ["explicit", "default"])
@@ -62,6 +63,13 @@ def test_gguf_cli_uses_selected_gpu_and_returns_score_and_audio(tmp_path, checkp
 
     context = GenerationContext(job_id=job.id, config=config, reporter=Reporter(), cancel_event=threading.Event())
     backend = AudioCppBackend(settings, store)
+    backend.manager = ModelManager(settings, store)
+    observed = []
+    started = backend.manager.external_started
+    def record_process(config, device, pid):
+        started(config, device, pid)
+        observed.append(backend.manager.state())
+    backend.manager.external_started = record_process
     store.write_runtime_settings({"device_index": 1})  # change while this job is active
 
     async def run():
@@ -81,3 +89,7 @@ def test_gguf_cli_uses_selected_gpu_and_returns_score_and_audio(tmp_path, checkp
     assert (store.generation_dir(job.project_id, job.id) / "audiocpp/device.txt").read_text() == "2"
     assert (store.generation_dir(job.project_id, job.id) / "audiocpp/model.txt").read_text() == str(model)
     assert result.effective_config["model"]["checkpoint"] == checkpoint
+    assert len(observed) == 1 and observed[0]["process_id"] > 0
+    assert observed[0]["lifecycle"] == "IN_USE" and observed[0]["device_index"] == 2
+    assert observed[0]["loaded"] is False and observed[0]["residency_known"] is False
+    assert backend.manager.state()["lifecycle"] == "UNLOADED"

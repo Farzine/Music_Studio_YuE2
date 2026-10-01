@@ -1,8 +1,9 @@
-# Hugging Face model inspection and discovery
+# Hugging Face model inspection, downloads and discovery
 
 In **Settings → model downloads**, enter `owner/repository` and an optional
 branch, tag or commit. Select **Inspect repository**, choose a model weight file,
-then **Preview download**. The preview shows selected content, total bytes when
+choose single-package, selected-file or complete-repository content, then
+**Preview download**. The preview shows selected content, total bytes when
 known, free disk space at the model destination, prerequisites and a GPU estimate.
 **Download model** uses the resolved immutable commit, including when a branch
 changes after inspection. Changing repository, revision or file clears the preview.
@@ -71,20 +72,94 @@ Preview selection modes:
 - `repository`: all files at that commit, including alternate weights, examples
   and documentation. The primary filename remains explicit for registration.
 
-The preview checks the nearest existing parent of configured `MODELS_DIR`, on
-that destination's filesystem. It creates no installation or registry entries.
+The preview checks the nearest existing parent of the destination under
+`MODELS_DIR/hub`, including when that directory is a separate mounted filesystem.
+It creates no installation or registry entries.
 `total_bytes` is null if any selected size is unknown; `known_bytes` is the actual
 metadata lower bound. `disk_status` distinguishes sufficient, insufficient and
-unknown totals. Known content plus 1 GiB headroom exceeding free space sets
-`can_download=false`. Free space must still be checked at transfer time.
+unknown totals. `existing_bytes` is the observed size of requested files already at
+that installation, pending verification; `remaining_known_bytes` is the known
+additional content. This amount plus 1 GiB headroom exceeding free space sets
+`can_download=false`. Free space is checked again before transfer and when the SDK
+resolves previously unknown sizes. Unknown totals cannot guarantee enough space.
 
-**Current transfer boundary:** the existing download POST still accepts one
-primary filename and recognized companions. Multi-file/repository previews are
-available through the API; their atomic transfers, staging/recovery, verification
-and measured byte/rate/ETA progress are the next Phase 4B. The UI currently submits
-the existing single-file package mode. File-count progress remains honest; it is
-not converted into a fabricated byte percentage. Dedicated model pages and browser
-interaction tests follow in the later UX/testing phases.
+Remote `studio-model.json` and `.cache/huggingface/` content are reserved local
+control paths. Select other files explicitly if a repository contains them;
+complete-repository mode refuses such a selection.
+
+## Transfer, validation and registration
+
+All three preview modes also work in the Settings download panel and download API.
+The primary filename remains explicit. Complete-repository mode preserves alternate
+weights as content but registers only that primary model for selection. It does not
+add a runtime for unsupported architectures, shards or encodings.
+
+Each job pins its commit and selected files before queuing. Transfers use the
+existing Hugging Face SDK's HTTP/Xet implementation, authentication and cache/resume
+behavior, with private staging at `MODELS_DIR/hub/.downloads/<job_id>`. Staging is
+excluded from model inventory. The final directory stays absent until all requested
+content is received, file sizes and supplied LFS SHA256 checksums pass, and known
+GGUF/safetensors structures and the package are checked. Unsupported encodings or
+missing prerequisites remain unvalidated/unavailable rather than becoming Ready.
+
+The manager writes installation metadata, takes the existing registry lock and
+publishes the directory by rename on the same filesystem. Registration failures
+roll newly published content back into private staging for retry. Existing file
+leases protect task/resident content. These steps handle process interruption;
+the filesystem JSON store does not promise database transactions or power-loss
+durability.
+
+Default single-package destination identities remain backward compatible.
+Different file selections use separate identities to avoid overwriting an existing
+installation; shared weights can therefore occupy disk twice. Repeated identical
+requests verify existing content and reuse it without transfer. Damaged installed
+content is preserved: inspect/delete that exact installation before downloading
+again. The downloader does not silently replace it.
+
+The workflow is **Queued → Downloading → Verifying → Registering → Downloaded**.
+The API retains `complete` for the last state. Inventory separately reports
+validation, compatibility and inference availability; completion does not mean
+loaded on a GPU. Supported content is available only when its package, runtime
+and compatible VAE prerequisites are satisfied.
+
+## Real progress and recovery
+
+The existing two-second frontend polling shows overall and current-file bytes,
+percentages only when totals are known, sampled speed, estimated ETA, status,
+errors and attempt number. SDK callbacks count actual logical file bytes processed;
+resume/cache/Xet deduplication can differ from network-interface bytes. A cache hit
+has verified file bytes but no invented transfer speed. Xet file preallocation is
+never counted as downloaded progress. Unknown totals stay Unknown until SDK
+metadata or the completed file establishes its size. Progress snapshots are
+persisted at most four times a second.
+
+Only one download runs across API processes. **Retry** retains the pinned commit,
+selection and SDK partial cache, rechecks disk space and revalidates content. A bad
+staged file is fetched again rather than trusted from cache. Jobs whose owner died,
+or whose running transfer no longer owns its execution lease, become interrupted
+failures when polled. A live owner's queued job still awaits its background task;
+download cancellation/shutdown coordination is not added here.
+
+**Remove partial files** applies only to failed jobs and removes their private
+staging directory. Its reported `partial_bytes` measures allocated disk blocks,
+independently of download progress. It never deletes an installed model or a legacy
+unregistered directory. Old completed/failed jobs remain readable; retry upgrades
+legacy interrupted jobs by resolving their original revision once.
+
+Storage checks cover the model destination with a 1 GiB reserve. SDK caches outside
+that directory may use another filesystem; cache growth, unknown sizes and other
+processes' writes cannot be guaranteed by a preview. Insufficient space during
+transfer becomes an actionable failed job with private staging retained for retry.
+
+The SDK is pinned to `huggingface-hub==0.36.2`. Its public download function has no
+progress callback, so one private progress-factory seam is isolated in
+`huggingface_transfer.py` and scoped to studio transfers. HTTP resume, Xet and
+concurrent callback tests must pass before upgrading that dependency.
+
+Dedicated model pages and browser interaction tests follow in the later UX/testing
+phases. Native VAE download registration/role selection is still pending; use the
+existing configured/local VAE workflow. Standalone GGUF VAE selection is not offered
+by the current audio.cpp adapter, which uses the package's bundled F16 VAE.
 
 ## Errors and authentication
 

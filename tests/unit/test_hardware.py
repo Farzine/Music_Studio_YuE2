@@ -101,6 +101,18 @@ def test_offline_physical_cards_are_not_cuda_choices(store, monkeypatch):
     assert service(store).devices()["devices"] == []  # Do not offer hidden physical cards.
 
 
+@pytest.mark.parametrize("resident", [False, None, True])
+def test_tensor_placement_distinguishes_cpu_and_unknown_from_gpu_residency(store, monkeypatch, resident):
+    monkeypatch.setattr(system_info, "_gpus", lambda: ([], None, None))
+    heartbeat(store, gpu=dict(available=True, devices=[dict(index=i, total_bytes=100, free_bytes=80) for i in (0, 1)]),
+              model=dict(loaded=True, model="native", vae="decoder", device_index=0,
+                         model_gpu_resident=resident, vae_gpu_resident=False))
+    devices = service(store).devices()["devices"]
+    assert devices[0]["loaded_model"] == ("native" if resident is True else None)
+    assert devices[1]["loaded_model"] is None
+    assert all(d["loaded_vae"] is None for d in devices)
+
+
 def test_vram_warning_projects_selected_model_estimate(store, monkeypatch):
     instance = service(store)
     reference = store.settings.model_reference

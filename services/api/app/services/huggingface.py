@@ -16,6 +16,7 @@ from huggingface_hub.utils import (
 from requests.exceptions import RequestException
 
 from yue2_studio_core.errors import NotFoundError, ValidationError
+from yue2_studio_core.model_download import DOWNLOAD_DISK_RESERVE_BYTES
 from yue2_studio_core.model_metadata import (
     GGUF_COMPANIONS, NATIVE_COMPANIONS, ModelMetadata, model_config_compatibility,
     model_required_files, unique_json_object,
@@ -56,9 +57,10 @@ def hub_error(exc: Exception, repo_id: str, revision: str | None = None):
                            details={"reason": "huggingface_unavailable", "retryable": True})
 
 
-def installation_path(settings: Settings, repo_id: str, commit: str, filename: str) -> Path:
+def installation_path(settings: Settings, repo_id: str, commit: str, filename: str, *, extra_identity: str = "") -> Path:
     digest = hashlib.sha256(f"{repo_id}@{commit}/{filename}".encode()).hexdigest()[:12]
-    return settings.models_path / "hub" / f"{repo_id.replace('/', '--')}--{digest}"
+    suffix = "--" + hashlib.sha256(extra_identity.encode()).hexdigest()[:12] if extra_identity else ""
+    return settings.models_path / "hub" / f"{repo_id.replace('/', '--')}--{digest}{suffix}"
 
 
 def default_download_files(filename: str, names: set[str]) -> list[str]:
@@ -195,28 +197,37 @@ class HuggingFaceService:
             validate_source(repo_id, name)
             if name not in files:
                 raise NotFoundError(f"File {name} does not exist in {repo_id}@{commit}.")
+            if name == "studio-model.json" or name.startswith(".cache/huggingface/"):
+                raise ValidationError(f"{name} is reserved for local installation metadata; exclude it from the selection.")
         known = sum(files[name]["bytes"] or 0 for name in names)
         unknown = [name for name in names if files[name]["bytes"] is None]
-        destination = installation_path(self.settings, repo_id, commit, filename)
-        existing = self.settings.models_path.resolve()
+        default_names = default_download_files(filename, set(files))
+        identity = "\n".join(sorted(names)) if set(names) != set(default_names) else ""
+        destination = installation_path(self.settings, repo_id, commit, filename, extra_identity=identity)
+        existing = destination.parent.resolve()
         while not existing.exists():
             existing = existing.parent
         if not existing.is_dir():
             raise ValidationError(f"Model storage path {existing} is a file; configure a directory before downloading.")
         free = shutil.disk_usage(existing).free
-        insufficient = known + 2**30 > free
+        present = sum((destination / name).stat().st_size for name in names
+                      if (destination / name).is_file() and not (destination / name).is_symlink())
+        remaining = max(0, known - present)
+        insufficient = remaining + DOWNLOAD_DISK_RESERVE_BYTES > free
         required = model_required_files(filename)
         missing = [name for name in required if name not in names]
         return {"repo_id": repo_id, "revision": commit, "requested_revision": inspection["requested_revision"],
-                "filename": filename, "mode": mode, "files": [files[name] for name in names],
+                "filename": filename, "mode": mode, "selection_identity": identity, "files": [files[name] for name in names],
                 "total_bytes": None if unknown else known, "known_bytes": known, "unknown_size_files": unknown,
+                "existing_bytes": present, "remaining_known_bytes": remaining,
                 "destination": str(destination), "storage_path": str(existing), "free_bytes": free,
-                "safety_margin_bytes": 2**30, "disk_status": "insufficient" if insufficient else "unknown" if unknown else "sufficient",
+                "safety_margin_bytes": DOWNLOAD_DISK_RESERVE_BYTES, "disk_status": "insufficient" if insufficient else "unknown" if unknown else "sufficient",
                 "can_download": not insufficient, "missing_required_files": missing,
                 "candidate": next(c for c in inspection["candidates"] if c["model"]["filename"] == filename),
                 "warnings": [*inspection["warnings"],
                              *(["Insufficient disk space for the known content plus 1 GiB of headroom."] if insufficient else []),
                              *(["Some file sizes are unknown; available storage cannot be guaranteed."] if unknown else []),
+                             *(["Existing destination files will be verified before reuse; they are not overwritten."] if present else []),
                              *(["Selection omits required adapter files; it will not be inference ready."] if missing else [])]}
 
     def discover(self, base_model: str, limit: int = 10) -> dict:

@@ -391,6 +391,11 @@ class Store:
     def claim_next_job(self, worker_id: str, *, max_concurrent: int = 1) -> GenerationJob | None:
         """Atomically take the next queued job, respecting the GPU limit."""
         with self.queue_lock():
+            from .runtime_commands import RuntimeCommands
+
+            if any(command.worker_id == worker_id and command.status in {"queued", "running"}
+                   for command in RuntimeCommands(self).list()):
+                return None  # worker settles runtime control before taking new inference
             jobs = self.list_jobs()
             running = [job for job in jobs if job.status.is_active and job.worker_id == worker_id]
             if len(running) >= max_concurrent:

@@ -40,6 +40,7 @@ export default function SystemPage() {
   const worker = data.worker.workers.find((entry) => entry.online) ?? data.worker.workers[0];
   const runtime = (worker?.runtime ?? {}) as Record<string, string>;
   const model = (worker?.online ? worker.model : {}) as Record<string, unknown>;
+  const modelError = model.error && typeof model.error === "object" ? model.error as Record<string, unknown> : null;
   const disk = data.disk.used_bytes / data.disk.total_bytes;
 
   return (
@@ -177,10 +178,16 @@ export default function SystemPage() {
               }
             />
             <Row label="Backend" value={String(data.app.backend)} />
-            <Row label="Model loaded" value={worker?.online ? model.loaded ? "yes" : "no" : "unknown (worker offline)"} />
+            <Row label="Model lifecycle" value={worker?.online ? String(model.lifecycle ?? "Not reported") : "unknown (worker offline)"} />
+            <Row label="Weights retained" value={worker?.online ? model.residency_known === false ? "unknown" : model.loaded ? "yes" : "no" : "unknown (worker offline)"} />
             <Row label="Model" value={String(model.model ?? "—").split("/").pop() ?? "—"} />
             <Row label="Decoder" value={String(model.vae ?? "—").split("/").pop() ?? "—"} />
             <Row label="Device" value={model.device_index != null ? `cuda:${model.device_index}` : "—"} />
+            <Row label="Model placement" value={String(model.model_device ?? "Not reported")} />
+            <Row label="VAE placement" value={String(model.vae_device ?? "Not reported")} />
+            {model.process_id != null && <Row label="Model process" value={String(model.process_id)} />}
+            {worker?.current_command_id && <Row label="Runtime command" value={worker.current_command_id} />}
+            {modelError?.error_message != null && <ErrorNotice message={String(modelError.error_message)} guidance={modelError.guidance != null ? String(modelError.guidance) : null} className="my-3" />}
             <Row label="Queue depth" value={data.queue.depth} />
             <Row label="GPU job limit" value={String(data.app.max_concurrent_gpu_jobs)} />
             <Row label="Driver" value={data.driver_version ?? "—"} />

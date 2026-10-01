@@ -8,12 +8,13 @@ import shutil
 import stat
 from pathlib import Path
 
-from yue2_studio_core.errors import ConflictError, ValidationError
+from yue2_studio_core.errors import ConflictError, UnsupportedCapabilityError, ValidationError
 from yue2_studio_core.model_files import model_file_leases
 from yue2_studio_core.model_metadata import describe_model_files, resolve_model_reference, resolve_vae_reference
 from yue2_studio_core.model_registry import ModelRecord, ModelRegistry
 from yue2_studio_core.model_validator import validate_installation
-from yue2_studio_core.models import GenerationJob, utcnow
+from yue2_studio_core.models import GenerationConfig, GenerationJob, utcnow
+from yue2_studio_core.runtime_commands import RuntimeCommands
 from yue2_studio_core.settings import repo_root
 from yue2_studio_core.store import file_lock, write_json_atomic
 
@@ -21,6 +22,48 @@ from yue2_studio_core.store import file_lock, write_json_atomic
 class ModelService:
     def __init__(self, registry: ModelRegistry) -> None:
         self.registry, self.store, self.settings = registry, registry.store, registry.settings
+        self.commands = RuntimeCommands(self.store)
+
+    def request_runtime(self, registry_id: str, operation: str, worker_state: dict, config: GenerationConfig | None = None) -> dict:
+        with self.store.queue_lock():
+            return self._request_runtime(registry_id, operation, worker_state, config)
+
+    def _request_runtime(self, registry_id: str, operation: str, worker_state: dict, config: GenerationConfig | None) -> dict:
+        record = self.registry.get(registry_id)
+        if record.role != "model":
+            raise ValidationError("Select an inference model; its VAE is managed with the resident pipeline.")
+        worker = next((w for w in worker_state["workers"] if w.get("online") and w.get("worker_id") == self.settings.worker_id), None)
+        if not worker or not worker.get("session_id"):
+            raise ConflictError("Start an updated GPU worker before submitting a runtime command.")
+        if worker.get("backend") != "native":
+            raise UnsupportedCapabilityError("Load/unload requires the native worker; mock and remote Comfy workers do not own local model residency.")
+        if operation == "load":
+            entry = self.registry.describe(record.reference)
+            if entry.format == "gguf":
+                raise UnsupportedCapabilityError("The audio.cpp CLI loads GGUF weights per generation. Select this model in a task; persistent Load is unavailable.")
+            if not entry.inference_ready:
+                raise ValidationError(entry.problem or "The selected installation is unavailable; inspect and validate it.")
+            config = (config or GenerationConfig()).model_copy(deep=True)
+            if config.model.compute_backend == "vllm":
+                raise UnsupportedCapabilityError("The pinned vLLM backend starts its process during generation and has no preload command. Use torch or torch-eager for explicit Load; generation behavior is unchanged.")
+            config.model.checkpoint = record.reference
+            # A registry VAE ID is accepted alongside existing paths/sentinels.
+            if config.model.vae.startswith("model_"):
+                vae = self.registry.get(config.model.vae)
+                if vae.role != "vae":
+                    raise ValidationError("Choose a VAE separately from the inference model.")
+                config.model.vae = vae.reference
+            # Native VAE validation and runtime/memory checks occur in worker
+            # under file leases; admission does not import the GPU manager.
+        return self.commands.enqueue_locked(worker_id=worker["worker_id"], worker_session=worker["session_id"],
+                                     operation=operation, registry_id=record.registry_id, reference=record.reference,
+                                     config=config, device_index=self.store.device_index()).model_dump(mode="json")
+
+    def runtime_command(self, command_id: str, worker_state: dict) -> dict:
+        command = self.commands.get(command_id).model_dump(mode="json")
+        command["worker_online"] = any(w.get("online") and w.get("worker_id") == command["worker_id"]
+                                       and w.get("session_id") == command["worker_session"] for w in worker_state["workers"])
+        return command
 
     def inspect(self, registry_id: str) -> dict:
         record = self.registry.get(registry_id)
@@ -54,6 +97,14 @@ class ModelService:
         if target.resolve() != target:
             blockers.append("The installation path now points elsewhere. Restore the original path before deleting.")
         # Fail closed: Store.iter_jobs deliberately skips malformed records for UI queries.
+        for command in self.commands.list():
+            if command.status not in {"queued", "running"}:
+                continue
+            references = [command.reference]
+            if command.config:
+                references.append(resolve_vae_reference(command.config.model.vae, self.settings))
+            if any(Path(ref).resolve().is_relative_to(target) or target.is_relative_to(Path(ref).resolve()) for ref in references):
+                blockers.append(f"Runtime command {command.id} ({command.status}) requires this installation; await its acknowledgement first.")
         for path in self.store.jobs_dir.glob("*.json"):
             try:
                 job = GenerationJob.model_validate_json(path.read_text(encoding="utf-8"))

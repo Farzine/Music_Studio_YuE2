@@ -242,8 +242,8 @@ def validate_installation(entry: ModelMetadata, *, verify_checksum: bool = False
                 report.compatibility_status = "incompatible"
         else:
             raise UnsupportedEncoding("This model format has no installed structural reader.")
-        count = config.get("parameter_count")
-        facts["parameter_count"] = count if type(count) is int and count > 0 else None
+        count = config.get("parameter_count", config.get("num_parameters"))
+        facts["parameter_count"] = count if type(count) is int and 0 < count <= 2**63 - 1 else None
         facts.pop("family", None)
         report.facts = facts
         report.validation_status = "validated"

@@ -205,10 +205,15 @@ class SystemInfoService:
                     "allocated_bytes": entry.get("allocated_bytes"),
                     "reserved_bytes": entry.get("reserved_bytes"),
                     "worker_busy": bool(worker.get("current_generation_id") or worker.get("state") == "busy"),
-                    "loaded_vae": (worker.get("model") or {}).get("vae"),
+                    "loaded_vae": (worker.get("model") or {}).get("vae") if (
+                        (worker.get("model") or {}).get("loaded")
+                        and (worker.get("model") or {}).get("device_index") == entry["index"]
+                        and ("vae_gpu_resident" not in worker.get("model", {}) or worker["model"].get("vae_gpu_resident") is True)
+                    ) else None,
                     "loaded_model": (worker.get("model") or {}).get("model") if (
                         (worker.get("model") or {}).get("loaded")
                         and (worker.get("model") or {}).get("device_index") == entry["index"]
+                        and ("model_gpu_resident" not in worker.get("model", {}) or worker["model"].get("model_gpu_resident") is True)
                     ) else None,
                     "utilisation_percent": (match or {}).get("utilisation_percent"),
                     "temperature_c": (match or {}).get("temperature_c"),

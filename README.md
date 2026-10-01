@@ -78,11 +78,16 @@ disabled with the specific reason, rather than quietly missing.
 - Real progress only: no invented percentages.
 - A reproducibility manifest per generation, including weight hashes.
 - Pick which GPU runs the model, from the System page, without a restart.
+- Worker-owned native Load/Unload command APIs with acknowledged lifecycle,
+  separate model/VAE placement and visible cleanup failures on System.
+  See [runtime commands](docs/api.md#model-runtime-commands); Installed Models action buttons are planned.
 - Hugging Face model downloads with separate file and inference-availability
   states; unavailable models show the specific missing prerequisite.
 - Revision-aware repository inspection, quantized-model discovery and download
-  previews with destination storage and GPU estimates. See
-  [Hugging Face models](docs/huggingface-models.md) for current transfer support.
+  previews with destination storage and GPU estimates. Single-package, selected-file
+  and complete-repository downloads use private staging, checksum/structural checks
+  and atomic installation with measured byte progress, retry and partial cleanup.
+  See [Hugging Face models](docs/huggingface-models.md) for supported formats and limits.
 - Persistent model inventory with structural/checksum validation and confirmed
   deletion APIs that protect active tasks and resident model files. See
   [model management](docs/model-setup.md#local-model-registry); dedicated action UI is planned.
@@ -587,9 +592,10 @@ and hypothetical parameter capacity by quantization. Registered model assessment
 include VAE, KV cache, loading RAM, runtime workspace, precision and configured
 VRAM reserves. Unknown metadata stays Unknown; downloaded files do not become
 runnable from file size alone. See [model capacity and recommendations](docs/model-recommendations.md)
-for assumptions, states and configurable margins. [Hugging Face inspection and
-discovery](docs/huggingface-models.md) feeds candidate metadata into the same engine;
-atomic repository transfers and measured byte progress are the next phase.
+for assumptions, states and configurable margins. [Hugging Face model management](docs/huggingface-models.md)
+feeds inspected candidates into the same engine and supports atomic selected-file
+and repository downloads with measured progress. Download completion is separate
+from inference readiness and actual GPU loading.
 
 `CUDA_VISIBLE_DEVICES` in `.env` does **not** control this, and never did — that
 file is read into the application's settings, not exported into the worker's

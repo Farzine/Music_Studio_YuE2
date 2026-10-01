@@ -14,9 +14,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from yue2_studio_core.errors import ErrorCode, StudioError
-from yue2_studio_core.model_metadata import describe_model_files, resolve_model_reference, resolve_vae_reference
+from yue2_studio_core.errors import ConflictError, ErrorCode, StudioError, classify_exception
+from yue2_studio_core.model_metadata import describe_model_files, resolve_model_reference, resolve_vae_reference, vae_compatibility_error
 from yue2_studio_core.model_files import model_file_leases
+from yue2_studio_core.model_lifecycle import ModelLifecycle
+from yue2_studio_core.model_registry import ModelRegistry
+from yue2_studio_core.hardware import precision_capabilities, system_memory
+from yue2_studio_core.model_recommendations import assess_model, gpu_capacity
 from yue2_studio_core.models import GenerationConfig
 from yue2_studio_core.settings import Settings
 
@@ -51,6 +55,9 @@ class ModelManager:
         self._loaded_at: float | None = None
         self._last_used: float | None = None
         self._files_lease = None
+        self._cleanup_device: int | None = None
+        self._snapshot: dict = {}
+        self._publish(ModelLifecycle.UNLOADED)
 
     # -- device ------------------------------------------------------------ #
 
@@ -82,9 +89,9 @@ class ModelManager:
     def resolve_vae(self, config: GenerationConfig) -> str:
         return resolve_vae_reference(config.model.vae, self.settings)
 
-    def key_for(self, config: GenerationConfig) -> PipelineKey:
+    def key_for(self, config: GenerationConfig, device_index: int | None = None) -> PipelineKey:
         return PipelineKey(
-            device_index=self.device_index,
+            device_index=self.device_index if device_index is None else device_index,
             model=self.resolve_model(config),
             revision=config.model.revision,
             vae=self.resolve_vae(config),
@@ -102,10 +109,15 @@ class ModelManager:
 
     def verify_files(self, config: GenerationConfig) -> None:
         """Fail early with a precise reason instead of deep inside the runtime."""
-        for role, reference in (("model", self.resolve_model(config)), ("vae", self.resolve_vae(config))):
+        model = self.resolve_model(config)
+        entry = (ModelRegistry(self.settings, self._store).describe(model) if self._store else describe_model_files(model, "model"))
+        references = [("model", model)]
+        if entry.format != "gguf":
+            references.append(("vae", self.resolve_vae(config)))
+        for role, reference in references:
             path = Path(reference)
             if path.is_absolute() or reference.startswith(".") or path.is_dir():
-                entry = describe_model_files(reference, role)
+                entry = (ModelRegistry(self.settings, self._store).describe(reference, role) if self._store else describe_model_files(reference, role))
                 if not entry.inference_ready:
                     code = (ErrorCode.MODEL_NOT_FOUND if entry.inference_status == "files_missing" else
                             ErrorCode.INVALID_CONFIG if entry.inference_status == "validation_failed" else ErrorCode.UNSUPPORTED_CAPABILITY)
@@ -116,6 +128,9 @@ class ModelManager:
                     f"The {role} '{reference}' is not a local directory and offline mode is on.",
                     stage="loading_model",
                 )
+        if len(references) == 2 and all(Path(ref).is_dir() for _, ref in references):
+            if problem := vae_compatibility_error(model, self.resolve_vae(config)):
+                raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, problem, stage="loading_model")
 
     @staticmethod
     def native_sampling(config: GenerationConfig) -> tuple[Any, Any]:
@@ -148,12 +163,24 @@ class ModelManager:
         )
         return planner, semantic
 
-    def acquire(self, config: GenerationConfig) -> tuple[Any, bool]:
+    def acquire(self, config: GenerationConfig, device_index: int | None = None) -> tuple[Any, bool]:
         """Return a pipeline for this configuration and whether it was loaded now."""
         with self._lock:
-            key = self.key_for(config)
+            if self._snapshot["lifecycle"] in {ModelLifecycle.IN_USE.value, ModelLifecycle.UNLOAD_FAILED.value}:
+                raise ConflictError("Finish active inference or successfully unload failed resources before loading a model.")
+            key = self.key_for(config, device_index)
+            if describe_model_files(key.model, "model").format == "gguf":
+                raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "GGUF requires the per-job audio.cpp adapter; this manager owns native pipelines.", stage="loading_model")
+            # Recheck even when reusing weights: stale/failed validation must
+            # not be bypassed by an already-resident pipeline.
+            try:
+                self.verify_files(config)
+            except StudioError as exc:
+                self._publish(ModelLifecycle(self._snapshot["lifecycle"]) if self._pipeline else ModelLifecycle.LOAD_FAILED, error=exc.to_dict())
+                raise
             if self._pipeline is not None and self._key == key:
                 self._last_used = time.time()
+                self._publish(ModelLifecycle.IDLE)
                 return self._pipeline, False
 
             if self._pipeline is not None:
@@ -164,15 +191,55 @@ class ModelManager:
             if lease is not None:
                 lease.__enter__()
                 self._files_lease = lease
+            self._key = key
+            self._publish(ModelLifecycle.LOADING, key=key)
             try:
-                return self._load(config, key)
-            except BaseException:
-                self.release()
+                self._check_runtime(config, key)
+                self._cleanup_device = key.device_index
+                result = self._load(config, key)
+                self._publish(ModelLifecycle.LOADED)
+                return result
+            except BaseException as exc:
+                try:
+                    self.release()
+                except Exception:
+                    raise  # conservative cleanup failure blocks another load
+                error = exc.to_dict() if isinstance(exc, StudioError) else dict(error_code=classify_exception(exc).value, error_message=str(exc))
+                self._publish(ModelLifecycle.LOAD_FAILED, error=error)
                 raise
 
+    def _check_runtime(self, config: GenerationConfig, key: PipelineKey) -> None:
+        """Fresh worker-side device and shared safety estimate before allocation."""
+        try:
+            import torch
+        except ImportError as exc:
+            raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "PyTorch is unavailable in the GPU worker environment; check the worker installation.", stage="loading_model") from exc
+
+        if not torch.cuda.is_available() or key.device_index not in range(torch.cuda.device_count()):
+            raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, f"GPU {key.device_index} is unavailable in this worker.", stage="loading_model")
+        properties = torch.cuda.get_device_properties(key.device_index)
+        precision = precision_capabilities((properties.major, properties.minor))
+        if precision["bf16_supported"] is False or (key.quantization == "fp8" and precision["fp8_supported"] is False):
+            raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "The selected GPU lacks the requested native precision capability.", stage="loading_model")
+        free, total = torch.cuda.mem_get_info(key.device_index)
+        device = dict(index=key.device_index, selectable=True, cuda_available=True,
+                      memory_total_bytes=total, memory_free_bytes=free, **precision)
+        describe = ModelRegistry(self.settings, self._store).describe if self._store else describe_model_files
+        assessment = assess_model(describe(key.model, "model"), device=device, capacity=gpu_capacity(device, self.settings),
+                                  vae=describe(key.vae, "vae"), settings=self.settings,
+                                  runtime={"backend": "native", "native_available": True}, ram=system_memory(),
+                                  offload_ar=key.offload_ar, compute_backend=key.backend, memory_budget_gib=key.memory_budget_gib)
+        if assessment["excess_bytes"]:
+            excess = assessment["excess_bytes"] / 2**30
+            raise StudioError(ErrorCode.CUDA_OOM, f"Estimated runtime VRAM for {key.model} on GPU {key.device_index} exceeds the configured safe budget by {excess:.2f} GiB. Free VRAM or choose a smaller model/configuration; this is an estimate.",
+                              stage="loading_model", details={"assessment": assessment})
+
     def _load(self, config: GenerationConfig, key: PipelineKey) -> tuple[Any, bool]:
-        from yue2 import YuE2Pipeline
-        from yue2.protocol import GenerationConfig as NativeGenerationConfig
+        try:
+            from yue2 import YuE2Pipeline
+            from yue2.protocol import GenerationConfig as NativeGenerationConfig
+        except ImportError as exc:
+            raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "The native YuE2 runtime is unavailable in this worker environment; check the worker installation.", stage="loading_model") from exc
 
         self.verify_files(config)
         planner_sampling, semantic_sampling = self.native_sampling(config)
@@ -201,10 +268,15 @@ class ModelManager:
                 generation_config=native_config,
                 progress=False,
             )
+            if key.backend != "vllm":
+                # Pinned yue2-infer from_pretrained resolves files but leaves
+                # tensors lazy. Materialize the native model before LOADED.
+                self._pipeline._load_model()
         except FileNotFoundError as exc:
             raise StudioError(ErrorCode.MODEL_NOT_FOUND, str(exc), stage="loading_model") from exc
         except Exception as exc:
-            raise StudioError(ErrorCode.MODEL_LOAD_FAILED, str(exc), stage="loading_model") from exc
+            code = ErrorCode.CUDA_OOM if classify_exception(exc) is ErrorCode.CUDA_OOM else ErrorCode.MODEL_LOAD_FAILED
+            raise StudioError(code, str(exc), stage="loading_model") from exc
         self._key = key
         self._loaded_at = time.time()
         self._last_used = self._loaded_at
@@ -213,33 +285,71 @@ class ModelManager:
 
     def release(self) -> None:
         with self._lock:
+            if self._snapshot["lifecycle"] == ModelLifecycle.IN_USE.value:
+                raise ConflictError("The model is in use. Unload runs after the active inference operation finishes.")
             pipeline = self._pipeline
-            device_index = self._key.device_index if self._key else None
-            self._pipeline = None
+            self._publish(ModelLifecycle.UNLOADING)
+            try:
+                if pipeline is not None:
+                    pipeline.close()
+                    self._pipeline = None
+                    del pipeline
+                    gc.collect()
+                if self._cleanup_device is not None:
+                    self._clear_cuda(self._cleanup_device)
+                if self._files_lease is not None:
+                    self._files_lease.__exit__(None, None, None)
+                    self._files_lease = None
+            except Exception as exc:
+                error = StudioError(ErrorCode.MODEL_UNLOAD_FAILED, f"Model resource cleanup failed: {exc}", stage="unloading_model")
+                self._publish(ModelLifecycle.UNLOAD_FAILED, error=error.to_dict())
+                raise error from exc
             self._key = None
+            self._cleanup_device = None
             self._loaded_at = None
             self._last_used = None
-            if pipeline is not None:
-                try:
-                    pipeline.close()
-                except Exception:
-                    logger.exception("closing the pipeline failed")
-                del pipeline
-                gc.collect()
-                try:
-                    import torch
+            self._publish(ModelLifecycle.UNLOADED)
 
-                    with torch.cuda.device(device_index):
-                        torch.cuda.empty_cache()
-                        torch.cuda.ipc_collect()
-                except Exception:
-                    logger.exception("clearing CUDA cache failed")
-            if self._files_lease is not None:
-                self._files_lease.__exit__(None, None, None)
-                self._files_lease = None
+    @staticmethod
+    def _clear_cuda(device_index: int) -> None:
+        import torch
+
+        with torch.cuda.device(device_index):
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+
+    def begin_use(self) -> None:
+        with self._lock:
+            if self._pipeline is None or self._snapshot["lifecycle"] not in {ModelLifecycle.LOADED.value, ModelLifecycle.IDLE.value}:
+                raise ConflictError("A resident pipeline is required before starting inference.")
+            self._publish(ModelLifecycle.IN_USE)
+
+    def end_use(self) -> None:
+        with self._lock:
+            if self._snapshot["lifecycle"] == ModelLifecycle.IN_USE.value and self._pipeline is not None:
+                self._last_used = time.time()
+                self._publish(ModelLifecycle.IDLE)
+
+    def external_started(self, config: GenerationConfig, device_index: int, pid: int) -> None:
+        with self._lock:
+            if self._pipeline is not None or self._snapshot["lifecycle"] != ModelLifecycle.UNLOADED.value:
+                raise ConflictError("Release native resources before starting an audio.cpp process.")
+            # The CLI has no residency probe. Process activity is observable;
+            # loaded tensor/GPU memory is explicitly unknown, not assumed.
+            self._snapshot = {**self._snapshot, "lifecycle": ModelLifecycle.IN_USE.value,
+                              "model": self.resolve_model(config), "vae": str(Path(self.resolve_model(config)) / "yue2-vae-f16.gguf"),
+                              "device_index": device_index, "backend": "audiocpp", "residency_mode": "per_job",
+                              "residency_known": False, "process_id": pid, "model_gpu_resident": None, "vae_gpu_resident": None}
+
+    def external_finished(self) -> None:
+        with self._lock:
+            if self._snapshot.get("residency_mode") == "per_job":
+                self._publish(ModelLifecycle.UNLOADED)
 
     def release_if_device_changed(self) -> bool:
         with self._lock:
+            if self._snapshot["lifecycle"] == ModelLifecycle.UNLOAD_FAILED.value:
+                return False  # explicit unload retry must resolve uncertain cleanup
             if self._key is None or self._key.device_index == self.device_index:
                 return False
             self.release()
@@ -251,6 +361,8 @@ class ModelManager:
         if timeout <= 0:
             return False
         with self._lock:
+            if self._snapshot["lifecycle"] in {ModelLifecycle.IN_USE.value, ModelLifecycle.UNLOAD_FAILED.value}:
+                return False
             if self._pipeline is None or self._last_used is None:
                 return False
             if time.time() - self._last_used < timeout:
@@ -265,19 +377,61 @@ class ModelManager:
     def loaded(self) -> bool:
         return self._pipeline is not None
 
-    def state(self) -> dict:
-        with self._lock:
-            return {
-                "loaded": self._pipeline is not None,
-                "model": self._key.model if self._key else None,
-                "vae": self._key.vae if self._key else None,
-                "backend": self._key.backend if self._key else None,
-                "quantization": self._key.quantization if self._key else None,
-                "device_index": self._key.device_index if self._key else None,
+    @staticmethod
+    def _placement(module) -> tuple[str | None, bool | None]:
+        if module is None:
+            return None, False
+        try:
+            device = next(module.parameters()).device
+            return str(device), device.type == "cuda"
+        except (AttributeError, StopIteration):
+            return None, None
+
+    def _residency(self, pipeline) -> dict:
+        model = getattr(pipeline, "_model", None)
+        vae = getattr(pipeline, "_vae", None)
+        child = getattr(pipeline, "_vllm_worker", None)
+        tensors_known = pipeline is None or hasattr(pipeline, "_model")
+        model_device, model_gpu = self._placement(model)
+        vae_device, vae_gpu = self._placement(vae)
+        return dict(pipeline_ready=pipeline is not None,
+                    loaded=pipeline is not None and (not tensors_known or model is not None or vae is not None or child is not None),
+                    model_device=model_device, vae_device=vae_device,
+                    model_gpu_resident=model_gpu if tensors_known and child is None else None,
+                    vae_gpu_resident=vae_gpu if tensors_known else None,
+                    residency_known=tensors_known and child is None)
+
+    def _publish(self, lifecycle: ModelLifecycle, *, key: PipelineKey | None = None, error: dict | None = None) -> None:
+        key = key or self._key
+        snapshot = {
+                "lifecycle": lifecycle.value, "error": error,
+                **self._residency(self._pipeline),
+                "model": key.model if key else None,
+                "vae": key.vae if key else None,
+                "backend": key.backend if key else None,
+                "quantization": key.quantization if key else None,
+                "device_index": key.device_index if key else None,
                 "loaded_at": self._loaded_at,
-                "idle_seconds": (time.time() - self._last_used) if self._last_used else None,
+                "last_used": self._last_used,
                 "weights": getattr(self._pipeline, "weights", None) if self._pipeline else None,
+                "runtime_sha256": getattr(self._pipeline, "runtime_sha256", None) if self._pipeline else None,
+                "residency_mode": "persistent", "process_id": None,
             }
+        if lifecycle is ModelLifecycle.UNLOAD_FAILED:
+            snapshot["residency_known"] = False
+        self._snapshot = snapshot
+
+    def state(self) -> dict:
+        # Operation lock intentionally excluded: heartbeat must observe LOADING
+        # and UNLOADING while the blocking runtime call holds that lock.
+        snapshot = dict(self._snapshot)
+        if snapshot["lifecycle"] == ModelLifecycle.IN_USE.value and snapshot["residency_mode"] == "persistent":
+            # Native decode/offload may move weights to CPU during a job.
+            # Tensor device metadata is readable without allocating CUDA data.
+            snapshot.update(self._residency(self._pipeline))
+        used = snapshot.pop("last_used")
+        snapshot["idle_seconds"] = time.time() - used if used and snapshot["lifecycle"] != ModelLifecycle.IN_USE.value else None
+        return snapshot
 
     def runtime_versions(self) -> dict:
         import importlib.metadata
@@ -295,6 +449,5 @@ class ModelManager:
             versions["cudnn"] = str(torch.backends.cudnn.version())
         except Exception:
             versions["cuda"] = None
-        with self._lock:
-            versions["runtime_sha256"] = getattr(self._pipeline, "runtime_sha256", None) if self._pipeline else None
+        versions["runtime_sha256"] = self._snapshot.get("runtime_sha256")
         return versions

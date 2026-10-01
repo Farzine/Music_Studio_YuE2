@@ -7,6 +7,7 @@ import type {
   GpuInventory,
   GenerationSchema,
   ModelDownload,
+  ModelDownloadMode,
   HubInspection,
   HubPreview,
   HubDiscovery,
@@ -81,16 +82,18 @@ export const api = {
     request<HubInspection>("/api/v1/models/hub/inspect", {
       method: "POST", body: JSON.stringify({ repo_id: repoId, revision: revision || null }),
     }),
-  previewModelDownload: (repoId: string, filename: string, revision?: string) =>
+  previewModelDownload: (repoId: string, filename: string, revision?: string, mode: ModelDownloadMode = "single", selectedFiles?: string[]) =>
     request<HubPreview>("/api/v1/models/hub/preview", {
-      method: "POST", body: JSON.stringify({ repo_id: repoId, filename, revision: revision || null }),
+      method: "POST", body: JSON.stringify({ repo_id: repoId, filename, revision: revision || null, mode, selected_files: selectedFiles }),
     }),
   discoverModelRepos: () => request<HubDiscovery>("/api/v1/models/hub/discover"),
   modelDownloads: () => request<{ items: ModelDownload[] }>("/api/v1/models/downloads"),
-  startModelDownload: (repoId: string, filename: string, revision?: string) =>
+  startModelDownload: (repoId: string, filename: string, revision?: string, mode: ModelDownloadMode = "single", selectedFiles?: string[]) =>
     request<ModelDownload>("/api/v1/models/downloads", {
-      method: "POST", body: JSON.stringify({ repo_id: repoId, filename, revision: revision || null }),
+      method: "POST", body: JSON.stringify({ repo_id: repoId, filename, revision: revision || null, mode, selected_files: selectedFiles }),
     }),
+  retryModelDownload: (id: string) => request<ModelDownload>(`/api/v1/models/downloads/${id}/retry`, { method: "POST" }),
+  cleanupModelDownload: (id: string) => request<ModelDownload>(`/api/v1/models/downloads/${id}/partial`, { method: "DELETE" }),
   selectDevice: (deviceIndex: number) =>
     request<GpuInventory>("/api/v1/system/device", {
       method: "PUT",

@@ -455,6 +455,7 @@ export interface HubPreview {
   repo_id: string;
   revision: string;
   filename: string;
+  mode: ModelDownloadMode;
   files: HubFile[];
   total_bytes: number | null;
   known_bytes: number;
@@ -477,13 +478,28 @@ export interface ModelDownload {
   repo_id: string;
   filename: string;
   revision: string;
-  status: "downloading" | "complete" | "failed";
+  mode?: ModelDownloadMode;
+  status: "queued" | "downloading" | "verifying" | "registering" | "complete" | "failed";
   error: string | null;
   path: string | null;
   completed_files: number;
   total_files: number | null;
   current_file: string | null;
+  total_bytes?: number | null;
+  downloaded_bytes?: number;
+  percentage?: number | null;
+  current_file_bytes?: number;
+  current_file_total_bytes?: number | null;
+  current_file_percentage?: number | null;
+  bytes_per_second?: number | null;
+  eta_seconds?: number | null;
+  attempt?: number;
+  partial_bytes?: number | null;
+  validation_status?: string;
+  inference_status?: string;
 }
+
+export type ModelDownloadMode = "single" | "selected" | "repository";
 
 export type Risk = "SAFE" | "WARNING" | "UNSAFE";
 
@@ -588,6 +604,9 @@ export interface SystemInfo {
 
 export interface WorkerHeartbeat {
   worker_id: string;
+  session_id?: string;
+  current_command_id?: string | null;
+  runtime_capabilities?: { persistent_load: boolean; gguf_persistent_load: boolean; load_unload_commands: boolean };
   state: string;
   backend: string;
   updated_at: string;

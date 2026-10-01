@@ -22,12 +22,10 @@ worker. A GGUF job runs the CLI on the GPU selected on the System page. The
 process exits after the job, releasing its GPU allocation. The native PyTorch
 model remains available for other jobs and is unloaded before a GGUF job.
 
-The System page compares the selected GPU's available memory with [published
-YuE2 GGUF longform peak measurements](https://huggingface.co/audio-cpp/Yue2-3B-GGUF)
-plus headroom. The result is a conservative
-estimate, not a guarantee for every song length or GPU. It reports the largest
-verified variant and its 3B parameter count; it does not estimate capacity for
-unrelated model families.
+The System page estimates model capacity and assesses actual installed/inspected
+metadata against free VRAM, VAE/cache/runtime overhead and configured reserves.
+Unknown parameters stay Unknown; file size alone does not prove a model can run.
+See [model recommendations](model-recommendations.md) for assumptions and limits.
 
 ## Downloaded and available are different states
 
@@ -235,6 +233,31 @@ matters when you are comparing runs over time. They have no effect on a local
 directory — there the file hashes are the identity.
 
 ## Keeping the model loaded
+
+The native worker accepts explicit Load and Unload through the
+[runtime API](api.md#model-runtime-commands). Requests are queued; wait for worker
+acknowledgement rather than treating HTTP acceptance as loading. The System page
+shows lifecycle, model/VAE placement, active CLI process and cleanup failures.
+Dedicated Installed Models action buttons follow in the UX phase.
+
+Load supports native torch/torch-eager and materializes the model weights; the
+VAE is retained lazily and is loaded during decoding. The runtime can move models
+and VAEs back to CPU, so retained weights do not imply current GPU residency.
+The pinned vLLM backend starts its child during generation and has no preload
+interface. The audio.cpp CLI likewise loads GGUF per generation; neither receives
+a fake successful persistent Load acknowledgement.
+
+Commands wait for active inference and run before new queued generations. A model
+and its VAE cannot be deleted while a pending command or resident file lease needs
+them. Restarting a worker fails an interrupted old command without replay. If the
+worker is offline, restart it and inspect the latest runtime state before submitting
+again. A successful command result describes that moment, not future residency.
+
+Unload releases the complete managed pipeline and resources. If close/cache cleanup
+fails, `MODEL_UNLOAD_FAILED` and UNLOAD_FAILED remain visible, and new loads are
+blocked until explicit Unload succeeds. CUDA contexts and other processes' memory
+are not model residency; physical release/switch verification and shutdown hardening
+remain subsequent work. Hard OS termination cannot guarantee Python cleanup.
 
 `MODEL_IDLE_UNLOAD_SECONDS=0` (the default) keeps the checkpoint resident
 between jobs; reloading 7.26 GB per request would dominate a short generation.

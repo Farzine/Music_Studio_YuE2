@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -32,10 +33,12 @@ from yue2_studio_core.errors import ErrorCode, StudioError, classify_exception  
 from yue2_studio_core.errors import GUIDANCE  # noqa: E402
 from yue2_studio_core.model_metadata import is_gguf_model  # noqa: E402
 from yue2_studio_core.hardware import precision_capabilities  # noqa: E402
+from yue2_studio_core.ids import new_id  # noqa: E402
+from yue2_studio_core.runtime_commands import RuntimeCommands  # noqa: E402
 from yue2_studio_core.models import GenerationJob, JobStatus, utcnow  # noqa: E402
 from yue2_studio_core.queue import FilesystemJobQueue  # noqa: E402
 from yue2_studio_core.settings import get_settings  # noqa: E402
-from yue2_studio_core.store import Store, write_json_atomic  # noqa: E402
+from yue2_studio_core.store import Store, file_lock, write_json_atomic  # noqa: E402
 
 from services.yue2_worker.adapters.base import GenerationContext  # noqa: E402
 from services.yue2_worker.adapters.audiocpp import AudioCppBackend  # noqa: E402
@@ -176,6 +179,9 @@ class Worker:
         self.manager = ModelManager(self.settings, store=self.store)
         self.backend = build_backend(self.settings, self.manager, store=self.store)
         self.worker_id = self.settings.worker_id
+        self.session_id = new_id("wkr")
+        self.commands = RuntimeCommands(self.store)
+        self._command = None
         self.once = once
         self._stop = asyncio.Event()
         self._current: GenerationJob | None = None
@@ -192,15 +198,19 @@ class Worker:
         model_state = self.manager.state()
         payload = {
             "worker_id": self.worker_id,
+            "session_id": self.session_id,
             "state": state,
             "backend": self.settings.yue2_backend,
             "updated_at": utcnow().isoformat(),
             "current_generation_id": self._current.id if self._current else None,
+            "current_command_id": self._command.id if self._command else None,
+            "runtime_capabilities": {"persistent_load": self.settings.yue2_backend == "native",
+                                     "gguf_persistent_load": False, "load_unload_commands": self.settings.yue2_backend == "native"},
             "max_concurrent_gpu_jobs": self.settings.max_concurrent_gpu_jobs,
             "model": model_state,
             "runtime": self.manager.runtime_versions(),
             "gpu": gpu_snapshot(self._job_device_index if self._job_device_index is not None else
-                                model_state.get("device_index") if model_state.get("loaded") else self.manager.device_index),
+                                model_state.get("device_index") if model_state.get("device_index") is not None else self.manager.device_index),
             "pid": os.getpid(),
             "hostname": socket.gethostname(),
         }
@@ -208,16 +218,9 @@ class Worker:
 
     async def _heartbeat_loop(self) -> None:
         while not self._stop.is_set():
-            state = "busy" if self._current else "idle"
+            state = "busy" if self._current or self._command else "idle"
             try:
                 self.write_heartbeat(state)
-                if self._current is None:
-                    state = self.manager.state()
-                    if state["loaded"] and state["device_index"] != self.manager.device_index:
-                        if hasattr(self.backend, "end_job"):
-                            self.backend.end_job()
-                    self.manager.release_if_device_changed()
-                    self.manager.maybe_unload_idle()
             except Exception:
                 logger.exception("heartbeat failed")
             try:
@@ -241,6 +244,38 @@ class Worker:
 
     # -- job execution ----------------------------------------------------- #
 
+    async def run_command(self, command) -> None:
+        """Serialized with jobs by the worker loop; no control thread mutates CUDA."""
+        self._command = command
+        self.write_heartbeat("busy")
+        try:
+            if self.settings.yue2_backend != "native":
+                raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "This worker does not own a native resident model; start the native worker for load/unload commands.")
+            if hasattr(self.backend, "end_job"):
+                self.backend.end_job()
+            if command.operation == "unload":
+                state = self.manager.state()
+                if state.get("model") and Path(state["model"]).resolve() != Path(command.reference).resolve():
+                    raise StudioError(ErrorCode.CONFLICT, "A different model is resident. Refresh runtime state and unload that model explicitly.")
+                await asyncio.to_thread(self.manager.release)
+            else:
+                config = command.config
+                if config is None or self.manager.resolve_model(config) != command.reference:
+                    raise StudioError(ErrorCode.INVALID_CONFIG, "The load command's model reference does not match its configuration.")
+                if is_gguf_model(command.reference):
+                    raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "audio.cpp CLI loads GGUF weights per generation; persistent Load is unavailable. Select this model in a generation task.")
+                if config.model.compute_backend == "vllm":
+                    raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "The pinned vLLM backend has no preload command; use torch/torch-eager or select vLLM for a generation task.")
+                await asyncio.to_thread(self.manager.acquire, config, command.device_index)
+            self.commands.finish(command, result=self.manager.state())
+        except Exception as exc:
+            error = exc.to_dict() if isinstance(exc, StudioError) else StudioError(classify_exception(exc), f"Runtime {command.operation} failed: {exc}").to_dict()
+            self.commands.finish(command, result=self.manager.state(), error=error)
+            logger.error("runtime command failed: %s", error["error_message"])
+        finally:
+            self._command = None
+            self.write_heartbeat("busy" if self._current else "idle")
+
     async def run_job(self, job: GenerationJob) -> None:
         from yue2_studio_core.model_files import model_file_leases
 
@@ -253,8 +288,8 @@ class Worker:
         is_gguf = is_gguf_model(self.manager.resolve_model(job.config))
         backend = AudioCppBackend(self.settings, self.store, self._job_device_index) if is_gguf else self.backend
         if is_gguf:
-            self.backend.end_job() if hasattr(self.backend, "end_job") else None
-            self.manager.release()
+            # Shared report checks apply to GGUF as well as native paths.
+            backend.manager = self.manager
         reporter = JobProgressReporter(self.store, job)
         cancel_event = threading.Event()
         self._cancel_current = cancel_event
@@ -270,6 +305,10 @@ class Worker:
         started = time.perf_counter()
         reset_gpu_peak(self._job_device_index)
         try:
+            if is_gguf:
+                self.backend.end_job() if hasattr(self.backend, "end_job") else None
+                await asyncio.to_thread(self.manager.release)
+                await asyncio.to_thread(self.manager.verify_files, job.config)
             warnings = await backend.validate_config(job.config)
             for message in warnings:
                 reporter.note(message, severity="WARNING")
@@ -279,6 +318,8 @@ class Worker:
                 loaded_index = self.manager.state()["device_index"]
                 if loaded_index is not None:
                     self._job_device_index = loaded_index
+                if self.manager.loaded:
+                    self.manager.begin_use()
             load_seconds = time.perf_counter() - started
 
             plan = await backend.generate_plan(context)
@@ -434,6 +475,7 @@ class Worker:
                 await backend.shutdown()
             elif hasattr(backend, "end_job"):
                 backend.end_job()
+            self.manager.end_use()
             self._current = None
             self._job_device_index = None
             self._cancel_current = None
@@ -441,15 +483,38 @@ class Worker:
     # -- main loop --------------------------------------------------------- #
 
     async def run(self) -> None:
+        # An invocation owns the heartbeat and commands for this worker ID.
+        # Reusing an ID concurrently cannot steal/replay another session's work.
+        key = hashlib.sha256(self.worker_id.encode()).hexdigest()
+        with file_lock(self.store.root / "worker" / f".{key}.process.lock", blocking=False):
+            await self._run()
+
+    async def _run(self) -> None:
         logger.info("worker %s starting on backend %s", self.worker_id, self.settings.yue2_backend)
+        self.commands.recover(self.worker_id, self.session_id)
         self.write_heartbeat("starting")
         heartbeat = asyncio.create_task(self._heartbeat_loop())
         try:
             while not self._stop.is_set():
+                command = self.commands.claim(self.worker_id, self.session_id)
+                if command is not None:
+                    await self.run_command(command)
+                    if self.once:
+                        break
+                    continue
                 job = await asyncio.to_thread(
                     self.queue.claim, self.worker_id
                 )
                 if job is None:
+                    # Lifecycle mutations belong to this serial loop, not the
+                    # heartbeat task: an idle timer cannot race a new acquire.
+                    if hasattr(self.backend, "end_job"):
+                        self.backend.end_job()
+                    try:
+                        await asyncio.to_thread(self.manager.release_if_device_changed)
+                        await asyncio.to_thread(self.manager.maybe_unload_idle)
+                    except StudioError:
+                        logger.exception("idle resource cleanup failed; explicit unload retry required")
                     if self.once:
                         break
                     try:

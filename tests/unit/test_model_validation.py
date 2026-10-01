@@ -251,15 +251,17 @@ def test_older_live_worker_heartbeat_protects_idle_residency(installed):
         confirm(service, registry_id)
 
 
-def test_model_manager_releases_leases_on_unload_and_failed_load(installed, monkeypatch):
+def test_model_manager_releases_leases_on_unload_and_failed_load(installed, monkeypatch, native_model_files):
     from services.yue2_worker.model_manager.manager import ModelManager
     service, model, registry_id = installed
+    native_model_files(service.settings.models_path / "vae", role="vae")
     manager = ModelManager(service.settings, service.store)
     def load(config, key):
         manager._key = key
         manager._pipeline = SimpleNamespace(close=lambda: None)
         return manager._pipeline, True
     monkeypatch.setattr(manager, "_load", load)
+    monkeypatch.setattr(manager, "_check_runtime", lambda config, key: None)
     monkeypatch.setitem(__import__("sys").modules, "torch", SimpleNamespace(cuda=SimpleNamespace(device=lambda index: nullcontext(), empty_cache=lambda: None, ipc_collect=lambda: None)))
     manager.acquire(GenerationConfig())
     assert not service.preview(registry_id)["can_delete"]

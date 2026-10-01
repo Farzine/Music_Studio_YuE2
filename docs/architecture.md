@@ -87,6 +87,7 @@ data/
   uploads/<upload-id>/
   presets/<preset-id>.json
   worker/<worker-id>.json    heartbeat: state, model, GPU, versions
+  worker-commands/<id>.json  session-bound load/unload request and acknowledgement
 ```
 
 Writes are atomic: a temporary file then `os.replace`. A crash mid-write leaves
@@ -260,9 +261,37 @@ which is how the System page can move the model to another GPU without a
 restart. A job whose key
 matches reuses the loaded model; a job that differs tears the old one down
 first. `MODEL_IDLE_UNLOAD_SECONDS=0` (the default) keeps it resident forever.
-File existence and `config.json`/`model.safetensors` presence are checked before
-loading, so a missing model fails as `MODEL_NOT_FOUND` rather than deep inside
-the runtime.
+Shared file/architecture rules and any persisted structural-validation report
+are checked before loading and resident reuse. Changed fingerprints and failed
+reports cannot be bypassed by using a directory instead of a registry ID.
+Legacy installations without reports retain their file preflight. Worker-side
+GPU precision and VRAM checks reuse the core estimation/safety rules; estimates
+are never successful-load guarantees.
+
+The manager publishes UNLOADED/LOADING/LOADED/IN_USE/IDLE/UNLOADING and explicit
+LOAD_FAILED/UNLOAD_FAILED snapshots. Reading these does not take the mutation
+lock, so a heartbeat remains responsive during a blocking load/close. Native
+torch loaders materialize weights through the pinned runtime's `_load_model`
+seam: its `from_pretrained` alone only constructs a lazy pipeline. VAE loading
+remains lazy. Tensor placement distinguishes CUDA from retained CPU weights;
+vLLM child and audio.cpp tensor residency stay unknown without a runtime probe.
+GPU cards show model/VAE residency only when established by the worker.
+
+The API writes load/unload command records through the same atomic JSON store,
+queue lock and model admission rules; it imports no GPU manager. The worker's
+serial loop processes commands between generations, before new job claims.
+Idle/device-change releases also run in that loop, while the heartbeat task only
+reports state. Pending commands protect model/VAE deletion. One pending command
+per worker is the current scheduling ceiling.
+
+Each invocation holds an exclusive worker-ID process lease and publishes a new
+session ID. Restart recovery fails old queued/running commands without replay;
+acknowledgements carry historical outcomes separately from the latest heartbeat.
+Unload closes the pipeline, drops references, collects objects, clears CUDA
+caches and releases file leases. Failures preserve uncertain references/leases,
+report UNLOAD_FAILED and require explicit unload retry before another load.
+This does not yet add coordinated GPU switching/rollback or hardened shutdown.
+See [runtime API](api.md#model-runtime-commands).
 
 ## Parameter mapping
 

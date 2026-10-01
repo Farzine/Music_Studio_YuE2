@@ -11,7 +11,7 @@ import { Field, Input } from "@/components/ui/field";
 import { keys, useCapabilities, useModelDownloads } from "@/hooks/use-queries";
 import { api } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
-import type { HubInspection, HubPreview, HubDiscovery } from "@/types/api";
+import type { HubInspection, HubPreview, HubDiscovery, ModelDownloadMode } from "@/types/api";
 
 export function ModelDownloads() {
   const client = useQueryClient();
@@ -22,10 +22,12 @@ export function ModelDownloads() {
   const [filename, setFilename] = React.useState("");
   const [inspection, setInspection] = React.useState<HubInspection | null>(null);
   const [revisions, setRevisions] = React.useState<HubInspection["revisions"]>([]);
+  const [mode, setMode] = React.useState<ModelDownloadMode>("single");
+  const [selectedFiles, setSelectedFiles] = React.useState<string[]>([]);
   const [preview, setPreview] = React.useState<HubPreview | null>(null);
   const [discovery, setDiscovery] = React.useState<HubDiscovery | null>(null);
   const files = inspection?.candidates.filter((candidate) => candidate.model.role === "model") ?? [];
-  const resetSource = () => { setInspection(null); setPreview(null); setFilename(""); setError(""); };
+  const resetSource = () => { setInspection(null); setPreview(null); setFilename(""); setSelectedFiles([]); setError(""); };
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const completed = React.useRef("");
@@ -61,7 +63,7 @@ export function ModelDownloads() {
     setError("");
     setPreview(null);
     try {
-      setPreview(await api.previewModelDownload(repoId.trim(), filename.trim(), inspection?.revision ?? revision.trim()));
+      setPreview(await api.previewModelDownload(repoId.trim(), filename.trim(), inspection?.revision ?? revision.trim(), mode, selectedFiles));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not preview download."); }
     finally { setBusy(false); }
   };
@@ -71,13 +73,23 @@ export function ModelDownloads() {
     setBusy(true);
     setError("");
     try {
-      await api.startModelDownload(preview.repo_id, preview.filename, preview.revision);
+      await api.startModelDownload(preview.repo_id, preview.filename, preview.revision, preview.mode, preview.files.map((file) => file.name));
       await client.invalidateQueries({ queryKey: keys.modelDownloads });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not start download.");
     } finally {
       setBusy(false);
     }
+  };
+
+  const updateJob = async (id: string, cleanup = false) => {
+    setBusy(true); setError("");
+    try {
+      if (cleanup) await api.cleanupModelDownload(id);
+      else await api.retryModelDownload(id);
+      await client.invalidateQueries({ queryKey: keys.modelDownloads });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Download action failed."); }
+    finally { setBusy(false); }
   };
 
   React.useEffect(() => {
@@ -109,6 +121,24 @@ export function ModelDownloads() {
         <Button variant="primary" onClick={download} disabled={busy || !preview?.can_download}>Download model</Button>
         <Button variant="ghost" onClick={discover} disabled={busy}>Discover YuE2 variants</Button>
       </div>
+      <Field label="Download content" htmlFor="hf-mode" description="The primary model stays explicit. Full repository includes alternate weights, examples and documentation.">
+        <select id="hf-mode" value={mode} disabled={busy} onChange={(event) => { setMode(event.target.value as ModelDownloadMode); setPreview(null); }}
+          className="w-full rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-canvas)] p-2 text-sm">
+          <option value="single">Model and recognized related files</option>
+          <option value="selected">Choose individual files</option>
+          <option value="repository">Complete repository</option>
+        </select>
+      </Field>
+      {mode === "selected" ? <fieldset className="max-h-64 space-y-2 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-line)] p-3">
+        <legend className="px-1 text-sm">Related repository files</legend>
+        {!inspection ? <p className="text-xs">Inspect the repository to choose related files. The primary file is always included.</p> : null}
+        {inspection?.files.map((file) => <label key={file.name} className="flex items-center gap-3 text-xs">
+          <input type="checkbox" disabled={busy || file.name === filename} checked={file.name === filename || selectedFiles.includes(file.name)}
+            onChange={(event) => { setPreview(null); setSelectedFiles((selected) => event.target.checked ? [...selected, file.name] : selected.filter((name) => name !== file.name)); }} />
+          <span className="min-w-0 flex-1 break-all">{file.name}</span>
+          <span className="shrink-0">{file.bytes != null ? formatBytes(file.bytes) : "Unknown size"}</span>
+        </label>)}
+      </fieldset> : null}
       {files.length > 0 ? (
         <div className="max-h-64 space-y-1 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-line)] p-2" aria-label="Repository model files">
           {files.map((candidate) => (
@@ -153,7 +183,23 @@ export function ModelDownloads() {
           <div key={item.id} className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] p-3">
             <Badge tone={item.status === "complete" ? "accent" : item.status === "failed" ? "danger" : "warn"}>{item.status === "complete" ? "Downloaded" : item.status}</Badge>
             <span className="min-w-0 flex-1 break-all text-sm">{item.repo_id} · {item.filename}</span>
-            {item.status === "downloading" ? <span className="text-xs">{item.completed_files}/{item.total_files ?? "?"} files · {item.current_file ?? "checking repository"}</span> : null}
+            {item.status !== "complete" && item.status !== "failed" ? <div className="w-full space-y-2" aria-live="polite">
+              <p className="break-all text-xs">{item.completed_files}/{item.total_files ?? "?"} files · {item.current_file ?? item.status}</p>
+              <progress className="h-2 w-full" aria-label="Overall download progress" max={100} value={item.percentage ?? undefined} />
+              <p className="text-xs">{formatBytes(item.downloaded_bytes ?? 0)} / {item.total_bytes != null ? formatBytes(item.total_bytes) : "Unknown total"}
+                {item.percentage != null ? ` · ${item.percentage.toFixed(1)}%` : ""}
+                {item.bytes_per_second != null && item.bytes_per_second > 0 ? ` · ${formatBytes(item.bytes_per_second)}/s` : ""}
+                {item.eta_seconds != null ? ` · ETA ${Math.ceil(item.eta_seconds)}s` : ""}</p>
+              {item.current_file ? <div className="space-y-1">
+                <progress className="h-1 w-full" aria-label={`File progress: ${item.current_file}`} max={100} value={item.current_file_percentage ?? undefined} />
+                <p className="text-xs text-[var(--color-ink-faint)]">Current file: {formatBytes(item.current_file_bytes ?? 0)} / {item.current_file_total_bytes != null ? formatBytes(item.current_file_total_bytes) : "Unknown size"}</p>
+              </div> : null}
+            </div> : null}
+            {item.status === "failed" ? <div className="flex w-full flex-wrap items-center gap-2">
+              <Button size="sm" variant="surface" disabled={busy} onClick={() => updateJob(item.id)}>Retry</Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => updateJob(item.id, true)}>Remove partial files</Button>
+              <span className="text-xs">Attempt {item.attempt ?? 1}{item.partial_bytes != null ? ` · ${formatBytes(item.partial_bytes)} in private staging` : ""}</span>
+            </div> : null}
             {item.error ? <span className="w-full text-xs text-[var(--color-danger)]">{item.error}</span> : null}
             {item.status === "complete" && item.path ? (
               model?.inference_ready ? (

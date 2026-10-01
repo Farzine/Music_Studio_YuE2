@@ -33,6 +33,12 @@ def gpus(system: SystemInfoService = Depends(system_info_provider)) -> dict:
     return system.devices()
 
 
+@router.get("/runtime")
+def runtime(system: SystemInfoService = Depends(system_info_provider), store: Store = Depends(store_provider)) -> dict:
+    """Worker-owned lifecycle, placement, command and freshness facts."""
+    return {**system.worker_state(), "selected_device_index": store.device_index()}
+
+
 @router.get("/model-recommendation")
 def model_recommendation(
     system: SystemInfoService = Depends(system_info_provider),

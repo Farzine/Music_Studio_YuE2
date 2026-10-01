@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query
 from pydantic import BaseModel
+from yue2_studio_core.models import GenerationConfig
 
 from app.core.deps import budget_provider, capability_provider, model_downloads_provider, model_service_provider, system_info_provider
 from app.services.budget import BudgetService
@@ -20,6 +21,8 @@ class DownloadRequest(BaseModel):
     repo_id: str
     filename: str
     revision: str | None = None
+    mode: Literal["single", "selected", "repository"] = "single"
+    selected_files: list[str] | None = None
 
 
 class InspectHubRequest(BaseModel):
@@ -112,9 +115,23 @@ def download_model(
     background: BackgroundTasks,
     downloads: ModelDownloads = Depends(model_downloads_provider),
 ) -> dict:
-    job = downloads.start(payload.repo_id, payload.filename, payload.revision)
+    job = downloads.start(payload.repo_id, payload.filename, payload.revision,
+                          mode=payload.mode, selected_files=payload.selected_files)
     background.add_task(downloads.run, job["id"])
     return job
+
+
+@router.post("/models/downloads/{download_id}/retry", status_code=202)
+def retry_download(download_id: str, background: BackgroundTasks,
+                   downloads: ModelDownloads = Depends(model_downloads_provider)) -> dict:
+    job = downloads.retry(download_id)
+    background.add_task(downloads.run, job["id"])
+    return job
+
+
+@router.delete("/models/downloads/{download_id}/partial")
+def cleanup_download(download_id: str, downloads: ModelDownloads = Depends(model_downloads_provider)) -> dict:
+    return downloads.cleanup(download_id)
 
 
 @router.get("/models")
@@ -137,6 +154,28 @@ class ValidateRequest(BaseModel):
 class DeleteRequest(BaseModel):
     confirmation_token: str
     confirmed_path: str
+
+
+class LoadRequest(BaseModel):
+    config: GenerationConfig | None = None
+
+
+@router.get("/models/runtime-commands/{command_id}")
+def runtime_command(command_id: str, models: ModelService = Depends(model_service_provider),
+                    system: SystemInfoService = Depends(system_info_provider)) -> dict:
+    return models.runtime_command(command_id, system.worker_state())
+
+
+@router.post("/models/{registry_id}/load", status_code=202)
+def load_model(registry_id: str, payload: LoadRequest = Body(default=LoadRequest()),
+               models: ModelService = Depends(model_service_provider), system: SystemInfoService = Depends(system_info_provider)) -> dict:
+    return models.request_runtime(registry_id, "load", system.worker_state(), payload.config)
+
+
+@router.post("/models/{registry_id}/unload", status_code=202)
+def unload_model(registry_id: str, models: ModelService = Depends(model_service_provider),
+                 system: SystemInfoService = Depends(system_info_provider)) -> dict:
+    return models.request_runtime(registry_id, "unload", system.worker_state())
 
 
 @router.get("/models/{registry_id}")

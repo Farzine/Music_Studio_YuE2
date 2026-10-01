@@ -167,6 +167,19 @@ class ModelRegistry:
         with file_lock(self.lock_path):
             return self._find(self._read(), registry_id)
 
+    def describe(self, reference: str, role: Literal["model", "vae"] = "model") -> ModelMetadata:
+        """Apply persisted validation to a direct worker reference without scanning.
+
+        Legacy paths with no registry/report keep their existing file preflight.
+        A known stale, failed or incompatible report cannot be bypassed by using
+        a path instead of a registry ID.
+        """
+        entry = describe_model_files(reference, role)
+        with file_lock(self.lock_path):
+            identity = _identity(str(Path(reference).resolve()), role)
+            record = next((r for r in self._read().entries if r.registry_id == identity), None)
+            return self._validated(self._attach(entry, record)) if record else entry
+
     @staticmethod
     def _find(document: RegistryDocument, registry_id: str) -> ModelRecord:
         record = next((item for item in document.entries if item.registry_id == registry_id), None)
@@ -242,6 +255,37 @@ class ModelRegistry:
             if document.model_dump(mode="json") != before:
                 write_json_atomic(self.path, document.model_dump(mode="json"))
             return self._attach(descriptor, record)
+
+    def install_verified(self, reference: str, report: ValidationReport, *, staging: Path | None = None) -> ModelMetadata:
+        """Publish complete content and its validation under the inventory lock.
+
+        The caller holds the destination's exclusive file lease. A same-volume
+        directory rename exposes all files together; registration failure moves
+        a new installation back to private staging for a safe retry.
+        """
+        destination = Path(reference).absolute()
+        with file_lock(self.lock_path):
+            document = self._read()  # fail before publishing if the registry is damaged
+            if staging is not None and destination.exists():
+                raise ValidationError("An installation already exists at the download destination; refresh and retry.")
+            moved = False
+            try:
+                if staging is not None:
+                    staging.rename(destination)
+                    moved = True
+                report.registry_id = _identity(str(destination.resolve()), "model")
+                if file_fingerprint(destination, report.files) != report.fingerprint:
+                    raise ValidationError("Downloaded files changed after verification; retry the download.")
+                write_json_atomic(self.store.root / "model-validations" / f"{report.registry_id}.json", report.model_dump(mode="json"))
+                descriptor = self._validated(describe_model_files(str(destination), "model").model_copy(
+                    update={"registry_id": report.registry_id}))
+                record = self._upsert(document, descriptor)
+                write_json_atomic(self.path, document.model_dump(mode="json"))
+                return self._validated(self._attach(descriptor, record))
+            except Exception:
+                if moved:
+                    destination.rename(staging)
+                raise
 
     def inventory(self) -> list[ModelMetadata]:
         """Idempotently import legacy directories, then refresh all known paths."""

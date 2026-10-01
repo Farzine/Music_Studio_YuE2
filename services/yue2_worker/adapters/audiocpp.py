@@ -30,6 +30,7 @@ class AudioCppBackend:
         self._rate = 48000
         self._semantic: np.ndarray | None = None
         self._truncated = False
+        self.manager = None
 
     async def get_capabilities(self) -> dict:
         return {"backend": self.name, "modes": ["full", "melody", "off", "score_edit"]}
@@ -94,6 +95,8 @@ class AudioCppBackend:
         )
         communication = asyncio.create_task(process.communicate())
         try:
+            if self.manager is not None:
+                self.manager.external_started(config, self.device_index, process.pid)
             while not communication.done():
                 if context.cancelled():
                     if process.returncode is None:
@@ -119,6 +122,8 @@ class AudioCppBackend:
                 except ProcessLookupError:
                     pass
                 await process.wait()
+            if self.manager is not None:
+                self.manager.external_finished()
         if process.returncode or not wav.is_file():
             raise StudioError(
                 ErrorCode.INFERENCE_FAILED,

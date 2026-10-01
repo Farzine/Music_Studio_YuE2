@@ -7,12 +7,21 @@ Base URL `http://127.0.0.1:8000`. Interactive documentation at `/docs`.
 - `GET /api/v1/system/model-recommendation` assesses registered native/GGUF models for the selected GPU.
 - `GET /api/v1/models/hub?repo_id=owner/name&revision=main` lists remote GGUF and safetensors files.
 - `POST /api/v1/models/hub/inspect` accepts `repo_id`, optional `revision`/`device_index`; returns resolved commit, branches/tags, all file sizes/checksums, metadata and hardware assessments.
-- `POST /api/v1/models/hub/preview` adds a primary `filename`, optional `mode` (`single`, `selected`, `repository`) and `selected_files`; reports selection, actual destination disk space and compatibility. Multi-file/repository transfers follow in Phase 4B; these modes currently preview only.
+- `POST /api/v1/models/hub/preview` adds a primary `filename`, optional `mode` (`single`, `selected`, `repository`) and `selected_files`; reports selection, actual destination disk space and compatibility.
 - `GET /api/v1/models/hub/discover?base_model=m-a-p/YuE2-3B&limit=10` inspects quantized-lineage repositories, including per-repository errors and hardware assessments. Optional `device_index`; limit 1–20.
-- `POST /api/v1/models/downloads` accepts `{ "repo_id": "owner/name", "filename": "file.gguf", "revision": "main" }` and returns a download ID.
-- `GET /api/v1/models/downloads` and `GET /api/v1/models/downloads/{id}` report file progress, completion, and failures. Completed compatible models appear in the existing model inventory and generation schema.
+- `POST /api/v1/models/downloads` accepts `{ "repo_id": "owner/name", "filename": "file.gguf", "revision": "main" }`, optional `mode` (default `single`) and `selected_files`. All three modes transfer content. It returns 202 with a queued job, immutable commit and exact file selection; invalid selections or insufficient known disk space fail before queuing.
+- `GET /api/v1/models/downloads` and `GET /api/v1/models/downloads/{id}` report `queued`, `downloading`, `verifying`, `registering`, `complete` or `failed`. Jobs include `files`, `total_bytes`, `downloaded_bytes`, nullable `percentage`, `current_file`, `current_file_bytes`, nullable `current_file_total_bytes`/`current_file_percentage`, nullable `bytes_per_second`/`eta_seconds`, `attempt`, `error`, and allocated staging `partial_bytes`. Completed jobs also report `path`, `registry_id`, `validation_status` and `inference_status`. Legacy completed/failed records remain readable with their original fields.
+- `POST /api/v1/models/downloads/{id}/retry` returns 202 and queues only a failed/interrupted job, retaining its pinned commit, selection and resumable staging. A legacy job resolves its original revision once when upgraded.
+- `DELETE /api/v1/models/downloads/{id}/partial` removes only a failed job's private staging files, preserving the job and installed models. Active/complete jobs return 409. Only one active download is admitted across API processes.
 
-See [Hugging Face model inspection](huggingface-models.md) for metadata provenance,
+The frontend polls every two seconds. `complete` means content was downloaded and
+registered, independently of inference readiness or GPU residency. Missing runtime
+prerequisites and unsupported formats remain explicit inventory blockers. Repository
+mode registers the chosen primary model; alternate weights are retained as content.
+SDK progress measures logical file bytes, including resume/cache reuse, rather than
+network-interface traffic. Unknown totals yield no fabricated percentage or ETA.
+
+See [Hugging Face model management](huggingface-models.md) for metadata provenance,
 selection modes, Unknown fields, authentication, errors and current transfer limits.
 
 Every error uses the same envelope:
@@ -37,8 +46,53 @@ Codes come from `ErrorCode`; see [troubleshooting.md](troubleshooting.md).
 | `GET` | `/api/v1/system/info` | Physical GPUs (NVML), CPU/RAM, disk, queue, worker heartbeat and runtime versions. |
 | `GET` | `/api/v1/system/vram-estimate` | `?seconds=&decoder_mode=&budget_gib=` — returns a warning or `null`. An estimate, clearly labelled as one; it never changes the request. |
 | `GET` | `/api/v1/system/gpus` | Worker CUDA GPUs with runtime/precision/residency facts; informational physical cards when offline. Check `selectable`. |
+| `GET` | `/api/v1/system/runtime` | Worker heartbeats with lifecycle, model/VAE placement, command ID, session and online/stale status; configured `selected_device_index` is separate from actual residency. |
 | `GET` | `/api/v1/system/model-recommendation` | Per-GPU capacity and explainable registered-model assessments. Optional device/VAE/offload/compute/budget scenario. |
 | `PUT` | `/api/v1/system/device` | `{"device_index": 1}` — choose the GPU. Applies to the next job; a run in flight finishes where it started. |
+
+### Model runtime commands
+
+| Method | Path | Request/result |
+|---|---|---|
+| POST | `/api/v1/models/{registry_id}/load` | Optional `{ "config": { "model": { "vae": "standard", "compute_backend": "torch" } } }`; 202 with queued command. |
+| POST | `/api/v1/models/{registry_id}/unload` | No body; 202 with queued command. |
+| GET | `/api/v1/models/runtime-commands/{command_id}` | Persisted acknowledgement and matching-session `worker_online`. |
+
+Load accepts the existing GenerationConfig schema; the route's registry model is
+authoritative, and any `config.model.checkpoint` is replaced by its directory.
+VAE paths/sentinels and VAE registry IDs are accepted independently. Other pipeline
+settings, including decoder tiles and solver steps, retain their defaults unless
+provided. Invalid roles/models fail admission. The updated native worker must be
+online and expose a session ID; older, stopped, mock or remote Comfy workers cannot
+receive these local residency commands.
+
+Commands contain `id`, `worker_id`, `worker_session`, `operation`, `registry_id`,
+`reference`, `config`, frozen `device_index`, timestamps, `status`, nullable `result`
+and `error`. Status is `queued → running → succeeded/failed`. HTTP 202 confirms
+queueing only. Poll for acknowledgement; `result` is a historical worker snapshot,
+while `/system/runtime` is the latest heartbeat. Offline/expired snapshots never
+prove current loading. One pending command is admitted per worker. Commands wait
+for active inference and take precedence over new job claims. Pending model/VAE
+references prevent deletion. A new worker session fails interrupted old commands
+without replaying them; clients can inspect state and submit again.
+
+The worker rechecks files and persisted validation fingerprints, declared VAE
+compatibility, current GPU precision and the shared VRAM safety estimate before
+allocation. Native torch/torch-eager Load explicitly materializes the lazy runtime's
+model weights. The VAE remains lazy until decoding. GGUF audio.cpp and pinned vLLM
+have no persistent preload interface: Load returns an explicit unsupported error;
+their existing generation paths remain available.
+
+Heartbeat `model` now includes `lifecycle`, `pipeline_ready`, `loaded`, `error`,
+`model_device`, `vae_device`, nullable `model_gpu_resident`/`vae_gpu_resident`,
+`residency_mode`, `residency_known` and `process_id`, alongside existing fields.
+Lifecycle is UNLOADED, LOADING, LOADED, IN_USE, IDLE, UNLOADING, LOAD_FAILED or
+UNLOAD_FAILED. Retained CPU weights differ from GPU residency. Native placement
+uses tensor device metadata; per-job audio.cpp exposes its process and active
+device with unknown tensor residency. `MODEL_UNLOAD_FAILED` means cleanup could
+not be confirmed; retry Unload before loading another model. Device switching and
+rollback/shutdown hardening are subsequent phases; current `/system/device`
+semantics below remain unchanged.
 
 ### Choosing a GPU
 
