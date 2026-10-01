@@ -51,3 +51,34 @@ def test_invalid_repo_revision_file_gpu_and_mode_are_actionable(api_client, hub_
     response = api_client.post("/api/v1/models/hub/preview", json={"repo_id": "owner/repository", "filename": "model.safetensors", "mode": "invalid"})
     assert response.status_code == 422
     assert api_client.get("/api/v1/models/hub/discover", params={"limit": 21}).status_code == 422
+
+
+def test_gpu_assessments_are_read_only_and_pinned_preview_keeps_exact_content(api_client, hub_repository, monkeypatch):
+    from app.core.deps import store_provider
+    gpu_view(monkeypatch)
+    monkeypatch.setattr(system_info_provider(), "devices", lambda **kw: {
+        "selected_index": 0, "devices": [
+            {"index": index, "selectable": True, "cuda_available": True,
+             "memory_total_bytes": size * 2**30, "memory_free_bytes": size * 2**30}
+            for index, size in ((0, 24), (1, 8))],
+    })
+    before = store_provider().device_index()
+    inspection = api_client.post("/api/v1/models/hub/inspect", json={
+        "repo_id": "owner/repository", "revision": "v1", "device_index": 1,
+    }).json()
+    assert inspection["device_index"] == 1
+    assert all(item["device_index"] == 1 for item in inspection["assessments"])
+    reply = api_client.post("/api/v1/models/hub/preview", json={
+        "repo_id": inspection["repo_id"], "revision": inspection["revision"], "device_index": 1,
+        "filename": "custom-3b-q4_0.gguf", "mode": "selected", "selected_files": ["sidecars/yue2-model-config.json"],
+    })
+    assert reply.status_code == 200
+    preview = reply.json()
+    assert preview["revision"] == inspection["revision"]
+    assert preview["device_index"] == 1 and preview["assessment"]["device_index"] == 1
+    assert {f["name"] for f in preview["files"]} == {"custom-3b-q4_0.gguf", "sidecars/yue2-model-config.json"}
+    assert preview["missing_required_files"] and preview["safety_margin_bytes"] > 0
+    discovery = api_client.get("/api/v1/models/hub/discover", params={"limit": 1, "device_index": 1}).json()
+    assert discovery["items"][0]["device_index"] == 1
+    assert store_provider().device_index() == before
+    assert api_client.get("/api/v1/models/downloads").json() == {"items": []}

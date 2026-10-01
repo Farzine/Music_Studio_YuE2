@@ -5,6 +5,7 @@ import {
   Cpu,
   Disc3,
   FolderOpen,
+  HardDrive,
   Info,
   Library,
   Settings,
@@ -30,6 +31,7 @@ const NAV = [
   { href: "/create", label: "Create", icon: Sparkles },
   { href: "/library", label: "Library", icon: Library },
   { href: "/projects", label: "Projects", icon: FolderOpen },
+  { href: "/models", label: "Models", icon: HardDrive },
   { href: "/system", label: "System", icon: Cpu },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

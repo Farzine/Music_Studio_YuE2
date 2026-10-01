@@ -1,23 +1,21 @@
 "use client";
 
 import { Trash2 } from "lucide-react";
+import Link from "next/link";
 import * as React from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { ModelDownloads } from "@/components/settings/model-downloads";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/feedback";
-import { useCapabilities, usePresets, useSystemInfo } from "@/hooks/use-queries";
+import { usePresets, useSystemInfo } from "@/hooks/use-queries";
 import { api } from "@/lib/api";
-import { formatBytes } from "@/lib/format";
 
 export default function SettingsPage() {
   const { data: system } = useSystemInfo();
-  const { data: capabilities } = useCapabilities();
   const { data: presets, refetch } = usePresets();
 
-  if (!system || !capabilities) return <Skeleton className="h-96 w-full" />;
+  if (!system) return <Skeleton className="h-96 w-full" />;
 
   return (
     <div className="space-y-5">
@@ -43,38 +41,15 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="model-downloads">
         <CardHeader>
           <CardTitle>Music models</CardTitle>
           <CardDescription>Browse Hugging Face and download a YuE2 model variant for this machine.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <ModelDownloads />
-          <h2 className="text-sm font-semibold">Installed models</h2>
-          {capabilities.models.map((model) => (
-            <div
-              key={model.id}
-              className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] p-3"
-            >
-              <Badge tone={model.download_status === "downloaded" ? "accent" : "warn"}>
-                {model.download_status === "downloaded" ? "Downloaded" : model.download_status === "unknown" ? "Files unknown" : "Weights missing"}
-              </Badge>
-              <Badge tone={model.inference_ready ? "accent" : "warn"}>
-                {model.inference_ready ? "Available for inference" : "Inference unavailable"}
-              </Badge>
-              <span className="text-sm">{model.label}</span>
-              <span className="min-w-0 break-all font-mono text-xs text-[var(--color-ink-faint)]">{model.id}</span>
-              {model.bytes ? (
-                <span className="ml-auto text-xs text-[var(--color-ink-faint)]">{formatBytes(model.bytes)}</span>
-              ) : null}
-              {model.problem ? (
-                <p className="w-full text-xs text-[var(--color-warn)]">{model.problem}</p>
-              ) : null}
-            </div>
-          ))}
-          <p className="text-xs text-[var(--color-ink-faint)]">
-            Availability checks file and runtime prerequisites. Model content and GPU memory have not been validated.
-          </p>
+          <Button variant="primary" asChild><Link href="/models/download">Download a Hugging Face model</Link></Button>
+          <Button variant="surface" asChild><Link href="/models/recommended">Recommended models</Link></Button>
+          <Button variant="surface" asChild><Link href="/models">Manage installed models and VAEs</Link></Button>
         </CardContent>
       </Card>
 

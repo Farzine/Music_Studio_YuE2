@@ -80,7 +80,8 @@ disabled with the specific reason, rather than quietly missing.
 - Pick which GPU runs the model, from the System page, without a restart.
 - Worker-owned native Load/Unload command APIs with acknowledged lifecycle,
   separate model/VAE placement and visible cleanup failures on System.
-  See [runtime commands](docs/api.md#model-runtime-commands); Installed Models action buttons are planned.
+  Installed Models provides acknowledged Load/Unload actions; see
+  [runtime commands](docs/api.md#model-runtime-commands).
 - Hugging Face model downloads with separate file and inference-availability
   states; unavailable models show the specific missing prerequisite.
 - Revision-aware repository inspection, quantized-model discovery and download
@@ -90,7 +91,8 @@ disabled with the specific reason, rather than quietly missing.
   See [Hugging Face models](docs/huggingface-models.md) for supported formats and limits.
 - Persistent model inventory with structural/checksum validation and confirmed
   deletion APIs that protect active tasks and resident model files. See
-  [model management](docs/model-setup.md#local-model-registry); dedicated action UI is planned.
+  [model management](docs/model-setup.md#local-model-registry). Open **Models** to
+  inspect/validate installations, use a model in Create, or preview and confirm deletion.
 - Cooperative cancellation of a running job.
 - Responsive layout, keyboard-reachable help, light and dark themes.
 
@@ -619,6 +621,12 @@ feeds inspected candidates into the same engine and supports atomic selected-fil
 and repository downloads with measured progress. Download completion is separate
 from inference readiness and actual GPU loading.
 
+Open **Models → Recommended Models** to compare installed models or discover
+quantized YuE2 repositories for an evaluated GPU. **Models → Download Model**
+separates inspection, revision/file selection, storage preview and measured
+download/install progress. Settings links to the same pages. GPU analysis is
+read only; System controls the worker device.
+
 `CUDA_VISIBLE_DEVICES` in `.env` does **not** control this, and never did — that
 file is read into the application's settings, not exported into the worker's
 process environment. Use the System page, or export the variable in the shell
@@ -672,6 +680,7 @@ make test-unit        # unit tests
 make test-integration # API, queue and worker against the mock backend
 make lint             # TypeScript types, ESLint, Python syntax
 make smoke-test       # a real generation on the GPU
+cd apps/web && npm test # dependency-free frontend preview selection regression
 ```
 
 ---

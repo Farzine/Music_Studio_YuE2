@@ -14,7 +14,13 @@ Base URL `http://127.0.0.1:8000`. Interactive documentation at `/docs`.
 - `POST /api/v1/models/downloads/{id}/retry` returns 202 and queues only a failed/interrupted job, retaining its pinned commit, selection and resumable staging. A legacy job resolves its original revision once when upgraded.
 - `DELETE /api/v1/models/downloads/{id}/partial` removes only a failed job's private staging files, preserving the job and installed models. Active/complete jobs return 409. Only one active download is admitted across API processes.
 
-The frontend polls every two seconds. `complete` means content was downloaded and
+Models → Download Model polls transfer status every two seconds. Repository
+inspection and preview accept an explicitly evaluated `device_index` without
+changing worker selection; the UI submits the immutable preview commit. Selection
+changes invalidate the preview. Models → Recommended Models uses the existing
+recommendation/discovery endpoints and backend ranking/reasons.
+
+`complete` means content was downloaded and
 registered, independently of inference readiness or GPU residency. Missing runtime
 prerequisites and unsupported formats remain explicit inventory blockers. Repository
 mode registers the chosen primary model; alternate weights are retained as content.
@@ -225,7 +231,7 @@ unprofiled memory rather than claiming the tiled estimate covers it. See
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/api/v1/models` | Imports recognized legacy installations, refreshes registered paths and returns live availability alongside durable metadata. |
+| `GET` | `/api/v1/models` | Imports recognized legacy installations, refreshes registered paths and returns availability, durable metadata, worker residency and runtime action previews. |
 | `GET` | `/api/v1/models/capabilities` | What this installation can do, with a reason for everything it cannot. |
 | `GET` | `/api/v1/models/{registry_id}` | Installation metadata, validation report and deletion preview. |
 | `POST` | `/api/v1/models/{registry_id}/validate` | Structural validation; JSON body `{"verify_checksum": false}`. `true` also checks weight SHA-256 expectations where provided. |
@@ -243,6 +249,18 @@ readiness projection. `currently_loaded` is `null` until worker residency can be
 established. Metadata such as `parameter_count`, `precision` and `quantization`
 is nullable. See [model states](model-setup.md#downloaded-and-available-are-different-states)
 for the current validation limits.
+
+`GET /models` additionally projects `runtime` (matching worker model/VAE
+snapshots with authoritative worker ID, freshness and online status) and
+`runtime_actions.load/unload` (`allowed`, nullable `reason`). These action
+previews reuse admission's role, runtime and file checks; they are not a
+reservation or an acknowledgement. Concurrent commands, shutdown, memory and
+VAE checks can still reject execution. Capability/schema inventories keep their
+existing file-only facts. `currently_loaded` on `/models` is true for measured
+retained model/VAE tensor placement, including CPU, false for observed absence,
+and null for offline/unmeasured/uncertain placement. A lazy VAE is not marked
+loaded merely because its model is loaded. GPU residency is exposed separately
+as `model_gpu_resident`/`vae_gpu_resident`; it cannot be inferred from that badge.
 
 Local entries add `registry_id`, `aliases`, `created_at`, `updated_at` and nullable
 `commit_hash`. `id` remains the legacy directory reference used by task configs;

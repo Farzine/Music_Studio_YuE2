@@ -26,6 +26,9 @@ export const keys = {
   gpus: ["gpus"] as const,
   modelRecommendation: ["model-recommendation"] as const,
   modelDownloads: ["model-downloads"] as const,
+  models: ["models"] as const,
+  modelInspection: (id: string) => ["model-inspection", id] as const,
+  modelCommand: (id: string) => ["model-command", id] as const,
   queue: ["queue"] as const,
   generations: (params: Record<string, unknown>) => ["generations", params] as const,
   generation: (id: string) => ["generation", id] as const,
@@ -63,11 +66,30 @@ export function useGpus() {
   return query;
 }
 
-export const useModelRecommendation = () =>
-  useQuery({ queryKey: keys.modelRecommendation, queryFn: api.modelRecommendation, refetchInterval: 10_000 });
+export const useModelRecommendation = (deviceIndex?: number) =>
+  useQuery({ queryKey: deviceIndex == null ? keys.modelRecommendation : [...keys.modelRecommendation, deviceIndex],
+    queryFn: () => api.modelRecommendation(deviceIndex), refetchInterval: 10_000 });
 
 export const useModelDownloads = () =>
   useQuery({ queryKey: keys.modelDownloads, queryFn: api.modelDownloads, refetchInterval: 2_000 });
+
+export const useModels = () =>
+  useQuery({ queryKey: keys.models, queryFn: api.models, refetchInterval: 3_000 });
+
+export function useModelCommand(id?: string) {
+  const client = useQueryClient();
+  const query = useQuery({ queryKey: keys.modelCommand(id ?? ""), queryFn: () => api.modelRuntimeCommand(id!), enabled: !!id,
+    refetchInterval: (query) => ["queued", "running"].includes(query.state.data?.status ?? "queued") ? 1_000 : false });
+  const status = query.data?.status;
+  useEffect(() => {
+    if (status === "succeeded" || status === "failed") {
+      for (const key of [keys.models, keys.system, keys.gpus, keys.health, keys.capabilities, keys.schema, keys.modelRecommendation]) {
+        client.invalidateQueries({ queryKey: key });
+      }
+    }
+  }, [client, id, status]);
+  return query;
+}
 
 /** Admission returns a queued worker request; useGpus polls its acknowledgement. */
 export function useSelectDevice() {

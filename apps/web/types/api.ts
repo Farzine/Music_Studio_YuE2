@@ -289,6 +289,51 @@ export interface ModelEntry {
   inference_status: "ready" | "files_missing" | "runtime_unavailable" | "incompatible" | "validation_failed" | "unknown";
   inference_ready: boolean;
   currently_loaded: boolean | null;
+  runtime?: ModelRuntime[];
+  runtime_actions?: Record<"load" | "unload", { allowed: boolean; reason: string | null }>;
+}
+
+export interface ModelRuntime {
+  worker_id: string;
+  online: boolean;
+  updated_at: string;
+  lifecycle: string;
+  residency_mode: string;
+  residency_known: boolean;
+  device_index: number | null;
+  model_device: string | null;
+  vae_device: string | null;
+  model_gpu_resident: boolean | null;
+  vae_gpu_resident: boolean | null;
+  error: { message?: string; error_message?: string; guidance?: string } | null;
+}
+
+export interface ModelDeletionPreview {
+  registry_id: string;
+  path: string;
+  original_path: string;
+  confirmation_token: string;
+  estimated_reclaimed_bytes: number;
+  files: { path: string; bytes: number }[];
+  blockers: string[];
+  can_delete: boolean;
+  warning: string;
+}
+
+export interface ModelInspection {
+  model: ModelEntry;
+  validation: Record<string, unknown> | null;
+  deletion: ModelDeletionPreview;
+}
+
+export interface ModelRuntimeCommand {
+  id: string;
+  registry_id: string | null;
+  operation: "load" | "unload" | "select_device" | "shutdown";
+  status: "queued" | "running" | "succeeded" | "failed";
+  worker_online?: boolean;
+  error: { message?: string; error_message?: string; guidance?: string } | null;
+  progress: Record<string, unknown> | null;
 }
 
 export interface Capabilities {
@@ -462,12 +507,16 @@ export interface HubInspection {
 export interface HubPreview {
   repo_id: string;
   revision: string;
+  requested_revision: string;
+  device_index: number;
   filename: string;
   mode: ModelDownloadMode;
   files: HubFile[];
   total_bytes: number | null;
   known_bytes: number;
   free_bytes: number;
+  safety_margin_bytes: number;
+  missing_required_files: string[];
   destination: string;
   disk_status: "sufficient" | "insufficient" | "unknown";
   can_download: boolean;
@@ -483,6 +532,7 @@ export interface HubDiscovery {
 
 export interface ModelDownload {
   id: string;
+  registry_id?: string | null;
   repo_id: string;
   filename: string;
   revision: string;

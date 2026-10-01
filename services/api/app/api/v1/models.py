@@ -135,8 +135,10 @@ def cleanup_download(download_id: str, downloads: ModelDownloads = Depends(model
 
 
 @router.get("/models")
-def list_models(capabilities: CapabilityService = Depends(capability_provider)) -> dict:
-    return {"items": capabilities.local_models()}
+def list_models(capabilities: CapabilityService = Depends(capability_provider),
+                models: ModelService = Depends(model_service_provider),
+                system: SystemInfoService = Depends(system_info_provider)) -> dict:
+    return {"items": models.inventory_runtime(capabilities.local_models(), system.worker_state())}
 
 
 @router.get("/models/capabilities")

@@ -5,6 +5,7 @@ import Link from "next/link";
 import * as React from "react";
 
 import { GpuSelector } from "@/components/settings/gpu-selector";
+import { ModelAssessmentCard } from "@/components/settings/model-assessment-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -113,29 +114,7 @@ export default function SystemPage() {
           {recommendation?.recommended ? <p className="rounded-[var(--radius-md)] bg-[var(--color-accent-soft)] p-3 text-sm">Recommended selection: <strong>{recommendation.recommended.label}</strong>. Estimated compatibility requires the stated configuration.</p> : <p className="text-sm text-[var(--color-ink-muted)]">No model is currently recommended. Review the reasons below; downloaded and inference-ready are separate states.</p>}
           <div className="grid gap-3 lg:grid-cols-2">
             {(recommendation?.items ?? []).map((item) => (
-              <div key={item.id} className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-line)] p-4">
-                <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="min-w-0 break-words text-sm font-semibold">{item.label}</h3><Badge tone={item.runnable ? "accent" : "neutral"}>{item.status === "unknown" ? "Unknown / needs validation" : item.status.replaceAll("_", " ")}</Badge></div>
-                <p className="mt-2 break-all text-xs text-[var(--color-ink-faint)]">{item.repo_id ?? item.id}</p>
-                <Row label="Format / backend" value={`${item.format} / ${item.backend ?? "Unknown"}`} />
-                <Row label="Quantization / precision" value={`${item.quantization ?? "Unknown"} / ${item.precision ?? "Unknown"}`} />
-                <Row label="Parameters (metadata)" value={item.parameters == null ? "Unknown" : item.parameters.toLocaleString()} />
-                <Row label="Model file size" value={formatBytes(item.model_bytes)} />
-                <Row label="Estimated runtime VRAM" value={formatBytes(item.estimate.estimated_peak_bytes)} />
-                <Row label="Safe VRAM budget" value={formatBytes(item.safe_budget_bytes)} />
-                <Row label="Inference prerequisites" value={item.inference_ready ? "Available" : "Needs attention"} />
-                <Row label="Currently loaded" value={item.currently_loaded ? "Yes" : "Not reported"} />
-                <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-[var(--color-ink-muted)]">{item.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-                <details className="mt-3 text-xs text-[var(--color-ink-faint)]">
-                  <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-accent)]">Memory estimate details</summary>
-                  <Row label="Expanded weights" value={formatBytes(item.estimate.weight_runtime_bytes)} />
-                  <Row label="VAE" value={formatBytes(item.estimate.vae_bytes)} />
-                  <Row label="KV cache" value={formatBytes(item.estimate.kv_cache_bytes)} />
-                  <Row label="Runtime workspace" value={formatBytes(item.estimate.runtime_overhead_bytes)} />
-                  <Row label="Estimated loading RAM" value={formatBytes(item.estimate.estimated_system_ram_bytes)} />
-                  <p className="mt-2">{item.estimate.basis.replaceAll("_", " ")} · cache: {item.estimate.kv_source.replaceAll("_", " ")}</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-4">{item.estimate.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul>
-                </details>
-              </div>
+              <ModelAssessmentCard key={item.id} item={item} action={{ href: "/models/recommended", label: "Review model recommendations" }} />
             ))}
           </div>
           {recommendation ? <p className="break-all text-xs text-[var(--color-ink-faint)]">Scenario: {recommendation.scenario.compute_backend}, {recommendation.scenario.memory_budget_gib} GiB native budget, VAE {recommendation.scenario.vae}, AR offload {recommendation.scenario.offload_ar ? "requested" : "off"}.</p> : null}

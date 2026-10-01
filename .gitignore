@@ -17,6 +17,8 @@ out/
 .env.local
 data/
 models/
+!apps/web/app/models/
+!apps/web/app/models/**
 tools/audio.cpp/
 logs/
 outputs/

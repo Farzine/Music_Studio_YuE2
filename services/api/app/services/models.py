@@ -10,7 +10,7 @@ from pathlib import Path
 
 from yue2_studio_core.errors import ConflictError, UnsupportedCapabilityError, ValidationError
 from yue2_studio_core.model_files import model_file_leases
-from yue2_studio_core.model_metadata import describe_model_files, resolve_model_reference, resolve_vae_reference
+from yue2_studio_core.model_metadata import ModelMetadata, describe_model_files, resolve_model_reference, resolve_vae_reference
 from yue2_studio_core.model_registry import ModelRecord, ModelRegistry
 from yue2_studio_core.model_validator import validate_installation
 from yue2_studio_core.models import GenerationConfig, GenerationJob, utcnow
@@ -33,20 +33,11 @@ class ModelService:
         record = self.registry.get(registry_id)
         if record.role != "model":
             raise ValidationError("Select an inference model; its VAE is managed with the resident pipeline.")
-        worker = next((w for w in worker_state["workers"] if w.get("online") and w.get("worker_id") == self.settings.worker_id), None)
-        if not worker or not worker.get("session_id"):
-            raise ConflictError("Start an updated GPU worker before submitting a runtime command.")
-        if worker.get("backend") != "native":
-            raise UnsupportedCapabilityError("Load/unload requires the native worker; mock and remote Comfy workers do not own local model residency.")
+        worker = self._runtime_worker(worker_state)
         if operation == "load":
             entry = self.registry.describe(record.reference)
-            if entry.format == "gguf":
-                raise UnsupportedCapabilityError("The audio.cpp CLI loads GGUF weights per generation. Select this model in a task; persistent Load is unavailable.")
-            if not entry.inference_ready:
-                raise ValidationError(entry.problem or "The selected installation is unavailable; inspect and validate it.")
             config = (config or GenerationConfig()).model_copy(deep=True)
-            if config.model.compute_backend == "vllm":
-                raise UnsupportedCapabilityError("The pinned vLLM backend starts its process during generation and has no preload command. Use torch or torch-eager for explicit Load; generation behavior is unchanged.")
+            self._check_load(entry, config)
             config.model.checkpoint = record.reference
             # A registry VAE ID is accepted alongside existing paths/sentinels.
             if config.model.vae.startswith("model_"):
@@ -59,6 +50,58 @@ class ModelService:
         return self.commands.enqueue_locked(worker_id=worker["worker_id"], worker_session=worker["session_id"],
                                      operation=operation, registry_id=record.registry_id, reference=record.reference,
                                      config=config, device_index=self.store.device_index()).model_dump(mode="json")
+
+    def _runtime_worker(self, worker_state: dict) -> dict:
+        worker = next((w for w in worker_state["workers"] if w.get("online") and w.get("worker_id") == self.settings.worker_id), None)
+        if not worker or not worker.get("session_id"):
+            raise ConflictError("Start an updated GPU worker before submitting a runtime command.")
+        if worker.get("backend") != "native":
+            raise UnsupportedCapabilityError("Load/unload requires the native worker; mock and remote Comfy workers do not own local model residency.")
+        return worker
+
+    @staticmethod
+    def _check_load(entry: ModelMetadata, config: GenerationConfig) -> None:
+        if entry.format == "gguf":
+            raise UnsupportedCapabilityError("The audio.cpp CLI loads GGUF weights per generation. Select this model in a task; persistent Load is unavailable.")
+        if not entry.inference_ready:
+            raise ValidationError(entry.problem or "The selected installation is unavailable; inspect and validate it.")
+        if config.model.compute_backend == "vllm":
+            raise UnsupportedCapabilityError("The pinned vLLM backend starts its process during generation and has no preload command. Use torch or torch-eager for explicit Load; generation behavior is unchanged.")
+
+    def inventory_runtime(self, entries: list[dict], worker_state: dict) -> list[dict]:
+        """UI projections of worker facts; never establish residency from files."""
+        online = [w for w in worker_state["workers"] if w.get("online") and "lifecycle" in (w.get("model") or {})]
+        for entry in entries:
+            runtime = []
+            for worker in worker_state["workers"]:
+                snapshot = worker.get("model") or {}
+                reference = snapshot.get(entry["role"])
+                if isinstance(reference, str) and reference and Path(reference).resolve() == Path(entry["id"]).resolve():
+                    runtime.append({**snapshot, "worker_id": worker["worker_id"], "online": worker.get("online", False),
+                                    "updated_at": worker.get("updated_at")})
+            entry["runtime"] = runtime
+            current = [r for r in runtime if r["online"]]
+            placements = [r.get(f'{entry["role"]}_device') for r in current]
+            entry["currently_loaded"] = (None if not online or any(not r["online"] and r.get("loaded") for r in runtime) or any(
+                not r.get("residency_known", False) or (r.get("loaded") and
+                    r.get(f'{entry["role"]}_device') is None and r.get(f'{entry["role"]}_gpu_resident') is None)
+                for r in current)
+                else bool(any(placements)))
+            actions = {}
+            for operation in ("load", "unload"):
+                try:
+                    if entry["role"] != "model":
+                        raise ValidationError("VAE resources are loaded/unloaded with their inference model.")
+                    if not entry.get("registry_id"):
+                        raise ValidationError("Register the local installation before using runtime actions.")
+                    self._runtime_worker(worker_state)
+                    if operation == "load":
+                        self._check_load(ModelMetadata.model_validate(entry), GenerationConfig())
+                    actions[operation] = {"allowed": True, "reason": None}
+                except (ConflictError, UnsupportedCapabilityError, ValidationError) as exc:
+                    actions[operation] = {"allowed": False, "reason": str(exc)}
+            entry["runtime_actions"] = actions
+        return entries
 
     def runtime_command(self, command_id: str, worker_state: dict) -> dict:
         command = self.commands.get(command_id).model_dump(mode="json")

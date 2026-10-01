@@ -75,6 +75,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   destructive = true,
   busy = false,
+  disabled = false,
   onConfirm,
 }: {
   open: boolean;
@@ -86,6 +87,7 @@ export function ConfirmDialog({
   cancelLabel?: string;
   destructive?: boolean;
   busy?: boolean;
+  disabled?: boolean;
   onConfirm: () => void | Promise<void>;
 }) {
   return (
@@ -116,7 +118,7 @@ export function ConfirmDialog({
             <AlertDialogPrimitive.Action asChild>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || disabled}
                 onClick={(event) => {
                   event.preventDefault();
                   void onConfirm();

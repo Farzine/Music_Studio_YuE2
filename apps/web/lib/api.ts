@@ -12,6 +12,10 @@ import type {
   HubPreview,
   HubDiscovery,
   ModelRecommendation,
+  ModelEntry,
+  ModelInspection,
+  ModelDeletionPreview,
+  ModelRuntimeCommand,
   Preset,
   ProjectConfigResponse,
   ProjectDeleteReport,
@@ -73,20 +77,33 @@ export const api = {
   health: () => request<{ status: string; ready: boolean; worker_online: boolean; backend: string }>("/api/v1/health"),
   systemInfo: () => request<SystemInfo>("/api/v1/system/info"),
   gpus: () => request<GpuInventory>("/api/v1/system/gpus"),
-  modelRecommendation: () => request<ModelRecommendation>("/api/v1/system/model-recommendation"),
+  modelRecommendation: (deviceIndex?: number) => request<ModelRecommendation>(`/api/v1/system/model-recommendation${deviceIndex == null ? "" : `?device_index=${deviceIndex}`}`),
+  models: () => request<{ items: ModelEntry[] }>("/api/v1/models"),
+  inspectModel: (id: string) => request<ModelInspection>(`/api/v1/models/${encodeURIComponent(id)}`),
+  validateModel: (id: string, verifyChecksum = false) => request<{ validation: Record<string, unknown> }>(`/api/v1/models/${encodeURIComponent(id)}/validate`, {
+    method: "POST", body: JSON.stringify({ verify_checksum: verifyChecksum }),
+  }),
+  modelDeletionPreview: (id: string) => request<ModelDeletionPreview>(`/api/v1/models/${encodeURIComponent(id)}/deletion-preview`),
+  deleteModel: (id: string, preview: ModelDeletionPreview) => request<{ complete: boolean }>(`/api/v1/models/${encodeURIComponent(id)}`, {
+    method: "DELETE", body: JSON.stringify({ confirmation_token: preview.confirmation_token, confirmed_path: preview.path }),
+  }),
+  modelRuntimeAction: (id: string, operation: "load" | "unload") => request<ModelRuntimeCommand>(`/api/v1/models/${encodeURIComponent(id)}/${operation}`, {
+    method: "POST", ...(operation === "load" ? { body: JSON.stringify({}) } : {}),
+  }),
+  modelRuntimeCommand: (id: string) => request<ModelRuntimeCommand>(`/api/v1/models/runtime-commands/${encodeURIComponent(id)}`),
   browseModelRepo: (repoId: string, revision?: string) =>
     request<{ repo_id: string; revision: string; files: { name: string; bytes: number | null }[] }>(
       `/api/v1/models/hub?${new URLSearchParams({ repo_id: repoId, ...(revision ? { revision } : {}) })}`,
     ),
-  inspectModelRepo: (repoId: string, revision?: string) =>
+  inspectModelRepo: (repoId: string, revision?: string, deviceIndex?: number) =>
     request<HubInspection>("/api/v1/models/hub/inspect", {
-      method: "POST", body: JSON.stringify({ repo_id: repoId, revision: revision || null }),
+      method: "POST", body: JSON.stringify({ repo_id: repoId, revision: revision || null, device_index: deviceIndex }),
     }),
-  previewModelDownload: (repoId: string, filename: string, revision?: string, mode: ModelDownloadMode = "single", selectedFiles?: string[]) =>
+  previewModelDownload: (repoId: string, filename: string, revision?: string, mode: ModelDownloadMode = "single", selectedFiles?: string[], deviceIndex?: number) =>
     request<HubPreview>("/api/v1/models/hub/preview", {
-      method: "POST", body: JSON.stringify({ repo_id: repoId, filename, revision: revision || null, mode, selected_files: selectedFiles }),
+      method: "POST", body: JSON.stringify({ repo_id: repoId, filename, revision: revision || null, mode, selected_files: selectedFiles, device_index: deviceIndex }),
     }),
-  discoverModelRepos: () => request<HubDiscovery>("/api/v1/models/hub/discover"),
+  discoverModelRepos: (deviceIndex?: number) => request<HubDiscovery>(`/api/v1/models/hub/discover${deviceIndex == null ? "" : `?device_index=${deviceIndex}`}`),
   modelDownloads: () => request<{ items: ModelDownload[] }>("/api/v1/models/downloads"),
   startModelDownload: (repoId: string, filename: string, revision?: string, mode: ModelDownloadMode = "single", selectedFiles?: string[]) =>
     request<ModelDownload>("/api/v1/models/downloads", {

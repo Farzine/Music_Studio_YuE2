@@ -1,20 +1,47 @@
 # Hugging Face model inspection, downloads and discovery
 
-In **Settings → model downloads**, enter `owner/repository` and an optional
-branch, tag or commit. Select **Inspect repository**, choose a model weight file,
+In **Models → Download Model**, enter `owner/repository` and an optional
+branch, tag or commit. Select **Inspect Repository**, choose a model weight file,
 choose single-package, selected-file or complete-repository content, then
-**Preview download**. The preview shows selected content, total bytes when
+**Preview Download**. The preview shows selected content, total bytes when
 known, free disk space at the model destination, prerequisites and a GPU estimate.
-**Download model** uses the resolved immutable commit, including when a branch
-changes after inspection. Changing repository, revision or file clears the preview.
+**Start Download** uses the resolved immutable commit, including when a branch
+changes after inspection. Changing repository, revision, file, download mode,
+individual files or the evaluated GPU requires a fresh preview. Settings links
+to these same Models pages instead of maintaining a second downloader.
+
+The page separates inspection, file selection and review from download history.
+The preview includes the storage reserve and missing runtime files; insufficient
+known space disables download. A GPU estimate never serves as proof of readiness.
+**GPU for compatibility estimate** changes this analysis only; use System to
+switch the worker device. Unknown sizes/parameters remain Unknown.
+
+Download history polls measured transfer status every two seconds. Overall and
+current-file percentages, bytes, speed and ETA come from the API; unknown totals
+remain indeterminate. Verifying and Registering are explicit stages. Completed
+requests show current validation, registration and inference prerequisites from
+the inventory separately from download completion. **Use Model** changes the
+Create form's checkpoint only. Failed requests offer retry and confirmed removal
+of their private partial files. Current inventory/download fetch errors have
+refresh actions; API errors retain guidance. Historical completed requests remain
+visible even when an installation has subsequently been removed.
 
 The revision input offers discovered branches/tags and also accepts explicit
-commits. **Discover YuE2 variants** inspects a bounded set of repositories declaring
+commits. In **Models → Recommended Models**, **Discover YuE2 variants** inspects a bounded set of repositories declaring
 `base_model:quantized:m-a-p/YuE2-3B`, the tag used by the
 [reference collection](https://huggingface.co/models?other=base_model:quantized:m-a-p/YuE2-3B).
 Other base models can be queried through the discovery API. Hub lineage tags do
 not prove compatibility. Results are inspected, never automatically downloaded.
 An empty discovery result does not stop inspection of a manually entered ID.
+
+Recommended Models presents installed models in backend-ranked order for the
+selected or explicitly evaluated GPU. Discovered files use the same assessment
+cards as installed models and System, including reasons, metadata, safe budget,
+VAE/cache/workspace/loading RAM estimates and per-GPU comparisons. Unknown
+placement/readiness is not inferred from a small file. **Inspect & preview
+download** carries the repository, immutable commit and exact filename into
+Download Model; it neither queues a transfer nor chooses a task model. Independent
+task Model/VAE/GPU controls and native VAE downloads remain a later UX slice.
 
 The existing [audio.cpp example repository](https://huggingface.co/audio-cpp/Yue2-3B-GGUF)
 is supported through its file/configuration metadata, rather than a repository-ID

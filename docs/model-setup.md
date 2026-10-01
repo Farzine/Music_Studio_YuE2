@@ -2,10 +2,12 @@
 
 ## Download from the studio
 
-Open **Settings → Music models**, enter a Hugging Face repository ID such as
-`audio-cpp/Yue2-3B-GGUF`, and browse its model files. You can also enter a
-filename and branch or commit directly. The studio downloads the chosen file
-plus the YuE2 files it needs, then offers **Use for a song**. Arbitrary files
+Open **Models → Download Model**, enter a Hugging Face repository ID such as
+`audio-cpp/Yue2-3B-GGUF`, and inspect its model files. You can enter a filename
+and branch, tag or commit directly. Inspect, select content, preview exact files,
+storage and compatibility estimates, then start the download. Single-package,
+individual-file and complete-repository downloads are supported. The studio
+offers **Use Model** when the current inventory reports inference readiness. Related files
 can be downloaded, but only complete YuE2 safetensors checkpoints and supported
 YuE2 GGUF packages are enabled for inference.
 
@@ -29,7 +31,7 @@ See [model recommendations](model-recommendations.md) for assumptions and limits
 
 ## Downloaded and available are different states
 
-Settings reports downloaded weights separately from inference availability. A
+Models reports downloaded weights separately from inference availability. A
 complete GGUF download remains **Downloaded** when audio.cpp is unavailable;
 the UI shows the missing executable and how to install it. Missing sidecars,
 unsupported GGUF packages and unreadable installation metadata have their own
@@ -99,7 +101,8 @@ discoverable, and registrations outside the scan roots require the backup.
 Use `POST /api/v1/models/{registry_id}/validate` with
 `{"verify_checksum": false}` for structural checks, or `true` to also compute
 weight SHA-256 hashes and compare available `weights_manifest.json` expectations.
-These actions currently use the API; dedicated model action buttons are planned.
+The Models page offers **Inspect → Validate files** for structural checks.
+Checksum verification is also available through the API.
 The API never imports PyTorch or loads tensors.
 
 The readers follow the [safetensors format](https://github.com/huggingface/safetensors#format)
@@ -139,8 +142,8 @@ Inspect `GET /api/v1/models/{registry_id}/deletion-preview` before deleting. It
 returns the exact directory/file list, estimated allocated disk space reclaimed,
 blockers and a confirmation token. `DELETE /api/v1/models/{registry_id}` requires
 both that token and `confirmed_path`. Changed files or paths require a new
-preview and confirmation. Dedicated UI confirmation is planned with the Models
-page; there is no automatic deletion on download or selection.
+preview and confirmation. The Models page shows this exact preview and requests
+confirmation; there is no automatic deletion on download or selection.
 
 Deletion refuses unfinished task references (including queued/cancel-requested
 work), in-use model/VAE files, overlapping registered installations, mounted
@@ -238,7 +241,28 @@ The native worker accepts explicit Load and Unload through the
 [runtime API](api.md#model-runtime-commands). Requests are queued; wait for worker
 acknowledgement rather than treating HTTP acceptance as loading. The System page
 shows lifecycle, model/VAE placement, active CLI process and cleanup failures.
-Dedicated Installed Models action buttons follow in the UX phase.
+Open **Models → Installed Models** for Inspect, Validate files, Use Model,
+Load, Unload and Delete. Settings links to this same inventory. The Models page
+includes both inference models and VAEs, with separate download, validation,
+registration, inference readiness and current residency badges. Unknown metadata
+and residency are shown explicitly. Parameter counts are never inferred from names.
+
+**Use Model** opens Create with only the checkpoint prefilled; it does not load
+weights or change the task's VAE. **Load** currently uses the default native torch
+configuration and default VAE; task configuration is independent. VAE resources
+are managed with their inference pipeline; they cannot be explicitly loaded or
+unloaded alone. Backend reasons explain unavailable runtime actions, including
+the per-generation GGUF CLI. A queued request is not a successful Load. The page
+polls its worker acknowledgement and separately refreshes live runtime facts.
+CPU-retained weights are loaded resources, with CPU placement shown explicitly.
+Offline workers, unmeasured child placement and uncertain release remain unknown.
+
+**Delete** first retrieves an exact file/path preview, estimated allocated space
+and running-task/residency blockers. Confirm the named installation to proceed.
+The server rechecks the token, file identities and blockers at deletion; if these
+change, refresh the preview and confirm again. Loaded models and active task
+references are protected. Incomplete download cleanup remains on the download
+page; installation previews include any partial files inside the installation.
 
 Load supports native torch/torch-eager and materializes the model weights; the
 VAE is retained lazily and is loaded during decoding. The runtime can move models
