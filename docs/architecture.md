@@ -256,9 +256,9 @@ Sampling is deliberately *not* in the key — it travels with each request, so
 changing a temperature never reloads 7 GB, and a resident pipeline can never
 apply a previous job's token budget to the next one.
 
-The device index is read fresh from `data/runtime-settings.json` on every job,
-which is how the System page can move the model to another GPU without a
-restart. A job whose key
+The device index is captured from `data/runtime-settings.json` at job start and
+passed through GenerationContext to native loading and cover transcription;
+audio.cpp already captures its CLI device. A job whose key
 matches reuses the loaded model; a job that differs tears the old one down
 first. `MODEL_IDLE_UNLOAD_SECONDS=0` (the default) keeps it resident forever.
 Shared file/architecture rules and any persisted structural-validation report
@@ -277,7 +277,7 @@ remains lazy. Tensor placement distinguishes CUDA from retained CPU weights;
 vLLM child and audio.cpp tensor residency stay unknown without a runtime probe.
 GPU cards show model/VAE residency only when established by the worker.
 
-The API writes load/unload command records through the same atomic JSON store,
+The API writes load/unload/select-device command records through the same atomic JSON store,
 queue lock and model admission rules; it imports no GPU manager. The worker's
 serial loop processes commands between generations, before new job claims.
 Idle/device-change releases also run in that loop, while the heartbeat task only
@@ -290,7 +290,46 @@ acknowledgements carry historical outcomes separately from the latest heartbeat.
 Unload closes the pipeline, drops references, collects objects, clears CUDA
 caches and releases file leases. Failures preserve uncertain references/leases,
 report UNLOAD_FAILED and require explicit unload retry before another load.
-This does not yet add coordinated GPU switching/rollback or hardened shutdown.
+Device switching reuses that command channel. The manager pins the previous
+model/VAE files across rollback, closes the old pipeline, verifies native resource
+references and vLLM child exit, synchronizes CUDA, clears caches and requires zero
+worker allocator allocations/reservations on the old device before target load.
+Other processes and context memory are outside this check. The selected index is
+committed under the queue lock after target preparation; target/commit failure
+releases the target before attempting previous-device reload. Cleanup failure
+blocks rollback allocation and stays UNLOAD_FAILED. A rollback load failure leaves
+a clean LOAD_FAILED state with the previous selected index. No second scheduler
+or API-side CUDA ownership is introduced. Persisted stage snapshots drive UI
+polling; restart recovery fails interrupted commands without replay.
+
+vLLM has no preload seam, so switching prepares its device-specific lazy wrapper;
+its child starts on the next generation. audio.cpp is per-job and has no resident
+model to reload. VAE materialization remains lazy for native torch as well.
+Shutdown uses the existing command journal as a priority session-bound request;
+signals and API lifespan cleanup use the same worker-owned path. Pending shutdown
+blocks new runtime/generation admission under the queue lock and cannot be claimed
+as an ordinary load. The heartbeat detects stop requests during active inference,
+sets cooperative cancellation and publishes stopping. An active native blocking
+thread is shielded from task cancellation and awaited before model/file references
+are released. An in-progress Load/switch settles; the serial loop starts no new work.
+
+Cleanup attempts adapter references, the active CLI, backend shutdown, manager
+release, job finalization, command acknowledgements and stopped heartbeat even if
+another stage fails. Failures remain in shutdown.errors and produce
+WORKER_SHUTDOWN_FAILED; model UNLOAD_FAILED is retained when release is uncertain.
+Waiting jobs stay queued, pending control requests fail without replay, and restart
+under the exclusive process lease finalizes abandoned active generations. Native
+model/VAE, vLLM resources and verified CUDA cache cleanup remain manager-owned.
+audio.cpp and transcription own separate child sessions: TERM, bounded wait, KILL
+and reap cover cancellation, timeout and exceptional paths. Transcription drains
+stdout/stderr concurrently to avoid a filled pipe preventing exit.
+
+API shutdown requests the configured worker's cleanup without importing its runtime
+and waits for a bounded acknowledgement. Coupling defaults on, with an explicit
+setting for independent deployments; the dev --reload launcher defaults it off.
+Normal ASGI BackgroundTasks finish first; abandoned owned downloads are marked
+retryable only when their transfer lease is free. Hard OS kills/unresponsive CUDA
+cannot promise Python cleanup or physical memory release.
 See [runtime API](api.md#model-runtime-commands).
 
 ## Parameter mapping

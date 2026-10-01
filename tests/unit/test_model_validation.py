@@ -262,7 +262,9 @@ def test_model_manager_releases_leases_on_unload_and_failed_load(installed, monk
         return manager._pipeline, True
     monkeypatch.setattr(manager, "_load", load)
     monkeypatch.setattr(manager, "_check_runtime", lambda config, key: None)
-    monkeypatch.setitem(__import__("sys").modules, "torch", SimpleNamespace(cuda=SimpleNamespace(device=lambda index: nullcontext(), empty_cache=lambda: None, ipc_collect=lambda: None)))
+    monkeypatch.setitem(__import__("sys").modules, "torch", SimpleNamespace(cuda=SimpleNamespace(
+        device=lambda index: nullcontext(), synchronize=lambda index: None, empty_cache=lambda: None,
+        ipc_collect=lambda: None, memory_allocated=lambda index: 0, memory_reserved=lambda index: 0)))
     manager.acquire(GenerationConfig())
     assert not service.preview(registry_id)["can_delete"]
     manager.release()

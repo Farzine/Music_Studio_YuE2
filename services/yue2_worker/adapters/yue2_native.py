@@ -15,7 +15,6 @@ runtime behaviour, RNG state or configuration is touched by it.
 """
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import logging
 import time
@@ -41,6 +40,7 @@ from .base import (
     GenerationContext,
     PlanResult,
     ProgressReporter,
+    settled_call,
 )
 
 logger = logging.getLogger(__name__)
@@ -199,7 +199,7 @@ class NativeYuE2Backend:
                 "The melody is transcribed from your reference. Transcription is an estimate, and its "
                 "mistakes carry into the cover — review the score afterwards."
             )
-        await asyncio.to_thread(self.manager.verify_files, config)
+        await settled_call(self.manager.verify_files, config)
         return warnings
 
     # -- stages ------------------------------------------------------------ #
@@ -224,12 +224,12 @@ class NativeYuE2Backend:
             return self.transcriber.transcribe(
                 audio_path,
                 output_dir,
-                device_index=self.manager.device_index,
+                device_index=context.device_index if context.device_index is not None else self.manager.device_index,
                 cancelled=context.cancelled,
                 on_progress=lambda completed, total: context.reporter.update(completed, total=total),
             )
 
-        result = await asyncio.to_thread(_run)
+        result = await settled_call(_run, on_cancel=context.cancel_event.set)
         for warning in result.warnings:
             context.reporter.note(f"Transcription: {warning}", severity="WARNING")
         context.reporter.note(
@@ -254,13 +254,15 @@ class NativeYuE2Backend:
             transcribed_abc = await self._transcribe_reference(config, context)
 
         def _load():
-            pipeline, loaded_now = self.manager.acquire(config)
+            if context.cancelled():
+                raise StudioError(ErrorCode.CANCELLED, "Cancelled before model loading.", stage="loading_model")
+            pipeline, loaded_now = self.manager.acquire(config, context.device_index)
             _install_reporter(pipeline, context.reporter)
             return pipeline, loaded_now
 
         context.reporter.begin(JobStatus.LOADING_MODEL, "loading_model", "Loading model")
         try:
-            pipeline, loaded_now = await asyncio.to_thread(_load)
+            pipeline, loaded_now = await settled_call(_load, on_cancel=context.cancel_event.set)
         except Exception as exc:
             raise _classify(exc, "loading_model") from exc
         self._pipeline = pipeline
@@ -300,7 +302,7 @@ class NativeYuE2Backend:
             )
 
         try:
-            plan = await asyncio.to_thread(_plan)
+            plan = await settled_call(_plan, on_cancel=context.cancel_event.set)
         except Exception as exc:
             raise _classify(exc, "planning") from exc
         return PlanResult(
@@ -402,7 +404,7 @@ class NativeYuE2Backend:
 
     async def generate_audio(self, context: GenerationContext, plan: PlanResult) -> AudioTokensResult:
         pipeline = self._pipeline
-        sampling = await asyncio.to_thread(self._resolve_token_budget, context, plan)
+        sampling = await settled_call(self._resolve_token_budget, context, plan, on_cancel=context.cancel_event.set)
         semantic_started = time.perf_counter()
 
         def _semantic():
@@ -413,7 +415,7 @@ class NativeYuE2Backend:
             )
 
         try:
-            semantic = await asyncio.to_thread(_semantic)
+            semantic = await settled_call(_semantic, on_cancel=context.cancel_event.set)
         except Exception as exc:
             raise _classify(exc, "semantic") from exc
         semantic_seconds = time.perf_counter() - semantic_started
@@ -427,7 +429,7 @@ class NativeYuE2Backend:
             return pipeline.synthesize(semantic, cancelled=context.cancelled)
 
         try:
-            latents = await asyncio.to_thread(_synthesize)
+            latents = await settled_call(_synthesize, on_cancel=context.cancel_event.set)
         except Exception as exc:
             raise _classify(exc, "synthesis") from exc
 
@@ -473,7 +475,7 @@ class NativeYuE2Backend:
             return pipeline.decode(tokens.latents, full=full)
 
         try:
-            audio = await asyncio.to_thread(_decode)
+            audio = await settled_call(_decode, on_cancel=context.cancel_event.set)
         except Exception as exc:
             raise _classify(exc, "decoding") from exc
         return DecodedAudio(
@@ -527,7 +529,7 @@ class NativeYuE2Backend:
 
     async def shutdown(self) -> None:
         self._pipeline = None
-        await asyncio.to_thread(self.manager.release)
+        await settled_call(self.manager.release)
 
     def end_job(self) -> None:
         """Do not retain a second reference after the manager unloads weights."""

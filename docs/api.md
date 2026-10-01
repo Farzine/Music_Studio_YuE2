@@ -48,7 +48,7 @@ Codes come from `ErrorCode`; see [troubleshooting.md](troubleshooting.md).
 | `GET` | `/api/v1/system/gpus` | Worker CUDA GPUs with runtime/precision/residency facts; informational physical cards when offline. Check `selectable`. |
 | `GET` | `/api/v1/system/runtime` | Worker heartbeats with lifecycle, model/VAE placement, command ID, session and online/stale status; configured `selected_device_index` is separate from actual residency. |
 | `GET` | `/api/v1/system/model-recommendation` | Per-GPU capacity and explainable registered-model assessments. Optional device/VAE/offload/compute/budget scenario. |
-| `PUT` | `/api/v1/system/device` | `{"device_index": 1}` — choose the GPU. Applies to the next job; a run in flight finishes where it started. |
+| `PUT` | `/api/v1/system/device` | `{"device_index": 1}` — queue a coordinated GPU switch (202); an active run finishes on its captured device. |
 
 ### Model runtime commands
 
@@ -90,9 +90,9 @@ Lifecycle is UNLOADED, LOADING, LOADED, IN_USE, IDLE, UNLOADING, LOAD_FAILED or
 UNLOAD_FAILED. Retained CPU weights differ from GPU residency. Native placement
 uses tensor device metadata; per-job audio.cpp exposes its process and active
 device with unknown tensor residency. `MODEL_UNLOAD_FAILED` means cleanup could
-not be confirmed; retry Unload before loading another model. Device switching and
-rollback/shutdown hardening are subsequent phases; current `/system/device`
-semantics below remain unchanged.
+not be confirmed; retry Unload before loading another model or switching GPUs.
+Worker shutdown reports a separate `WORKER_SHUTDOWN_FAILED` for cleanup/bookkeeping
+errors; `model.lifecycle` still describes whether native release succeeded.
 
 ### Choosing a GPU
 
@@ -110,20 +110,76 @@ an empty list even if NVML sees physical cards.
 
 ```jsonc
 {
-  "selected_index": 1,          // what the System page has chosen
+  "selected_index": 0,          // last worker-committed selection
   "active_index": 0,            // what the worker is using at this moment
-  "pending_restart": true,      // the model reloads on the next job
+  "pending_restart": false,     // legacy selected/active mismatch flag; no restart required
+  "switch_command": {
+    "id": "cmd_example", "device_index": 1, "status": "queued",
+    "worker_online": true, "progress": null, "error": null
+  },
   "devices": [
     { "index": 0, "name": "NVIDIA RTX A6000", "memory_free_bytes": 13207764992,
       "uuid": "GPU-example", "physical_index": 1, "selectable": true,
       "cuda_available": true, "cuda_runtime": "12.6", "memory_source": "nvml",
-      "other_process_count": 1, "other_process_bytes": 37346082816, "selected": false }
+      "other_process_count": 1, "other_process_bytes": 37346082816, "selected": true }
   ]
 }
 ```
 
-The choice is stored in `data/runtime-settings.json`, so it survives a restart
-and does not require editing `.env`.
+PUT returns the existing GPU inventory shape plus `switch_command`. It does not
+immediately change `selected_index`. Poll GET `/system/gpus` (latest switch) or
+GET `/models/runtime-commands/{id}` (that request's outcome). Commands use the
+same worker session and serial admission as Load/Unload; a second pending command
+returns 409. Old workers without `select_device_commands` need an update/restart
+before using this route; regular switches then require no restart.
+
+Stages are `unloading`, `released`, `loading`, `ready`, or failure recovery
+`rolling_back` / `restored`. The worker waits for active inference, releases old
+references/children, synchronizes CUDA, clears caches and checks its own allocator
+before target preparation. Selection is stored in `data/runtime-settings.json`
+only after success. Target failure attempts previous model/device restoration;
+error details include `rollback_succeeded` and `rollback_error`. Failed cleanup
+blocks further loading so the worker never intentionally overlaps GPU residency.
+
+An unloaded worker switches without loading an arbitrary default model. Native
+torch weights reload on the target; VAE remains lazy. Pinned vLLM prepares its
+wrapper and starts weights during generation; audio.cpp has no resident pipeline
+and starts its next CLI job on the new device. Allocator verification covers worker
+torch allocations, not other applications, driver contexts or a full NVML memory
+census. Graceful/abnormal shutdown handling is a separate lifecycle concern.
+
+### Shutdown
+
+SIGINT/SIGTERM, worker task cancellation and normal API lifespan exit request
+shutdown through the same session-bound command journal. Shutdown is a priority
+request and can coexist with an already running Load/switch. Active native thread
+operations settle before resources are released; generation cancellation uses
+existing safe boundaries. Pending Load/Unload/switch requests fail with CANCELLED;
+already acknowledged commands remain historical. Shutdown is acknowledged after
+cleanup attempts, with the final model snapshot and any cleanup error.
+
+Heartbeat fields add `accepting_work`, `shutdown.status` (`running`, `completed`,
+`failed`) and `shutdown.errors` (`stage`, `message`), with `state=stopping` then
+`stopped`. Stopping workers are not online/available for new runtime work; generation
+admission returns 409 during a pending shutdown, before creating a project/job.
+Waiting jobs are preserved. After the worker stops, offline generation queuing is
+still supported for its next start. Startup under the exclusive process lease marks
+abandoned active jobs failed/cancelled and does not replay them.
+
+`WORKER_SHUTDOWN_ON_API_EXIT=true` (default) requests shutdown of the configured
+worker; the API never imports CUDA models. `WORKER_SHUTDOWN_TIMEOUT_SECONDS=60`
+bounds the API's acknowledgement wait. Expiry logs an unacknowledged request rather
+than claiming GPU release. Old workers without shutdown-command support must be
+stopped using their launcher. `scripts/dev_api.sh --reload` defaults the coupling
+off to preserve development hot reload; an explicitly exported setting wins.
+`make stop` still signals both processes. Independent deployments can disable
+API/worker coupling explicitly; stopping only that API then keeps the worker alive.
+
+Normal ASGI shutdown waits for download BackgroundTasks. Abandoned requests owned
+by that API with no active transfer lease become failed/retryable, retaining private
+staging. Another API process or a live transfer after a forced timeout is preserved.
+Hard OS termination cannot guarantee Python cleanup; child groups are terminated
+and reaped where the runtime allows it, and stale state is recovered on restart.
 
 ### Hardware facts and uncertainty
 

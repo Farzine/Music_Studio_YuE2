@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 import { api } from "@/lib/api";
 import type { GenerationJob } from "@/types/api";
@@ -46,8 +47,21 @@ export const useHealth = () =>
 export const useSystemInfo = () =>
   useQuery({ queryKey: keys.system, queryFn: api.systemInfo, refetchInterval: 5_000 });
 
-export const useGpus = () =>
-  useQuery({ queryKey: keys.gpus, queryFn: api.gpus, refetchInterval: 5_000 });
+export function useGpus() {
+  const client = useQueryClient();
+  const query = useQuery({ queryKey: keys.gpus, queryFn: api.gpus, refetchInterval: (query) =>
+    ["queued", "running"].includes(query.state.data?.switch_command?.status ?? "") ? 1_000 : 5_000 });
+  const commandId = query.data?.switch_command?.id;
+  const status = query.data?.switch_command?.status;
+  useEffect(() => {
+    if (status === "succeeded" || status === "failed") {
+      for (const key of [keys.system, keys.modelRecommendation, keys.capabilities, keys.schema]) {
+        client.invalidateQueries({ queryKey: key });
+      }
+    }
+  }, [client, commandId, status]);
+  return query;
+}
 
 export const useModelRecommendation = () =>
   useQuery({ queryKey: keys.modelRecommendation, queryFn: api.modelRecommendation, refetchInterval: 10_000 });
@@ -55,7 +69,7 @@ export const useModelRecommendation = () =>
 export const useModelDownloads = () =>
   useQuery({ queryKey: keys.modelDownloads, queryFn: api.modelDownloads, refetchInterval: 2_000 });
 
-/** Choosing a GPU rewrites runtime settings; the worker picks it up next job. */
+/** Admission returns a queued worker request; useGpus polls its acknowledgement. */
 export function useSelectDevice() {
   const client = useQueryClient();
   return useMutation({

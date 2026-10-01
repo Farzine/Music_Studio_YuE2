@@ -5,7 +5,6 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from yue2_studio_core.errors import ValidationError
 from yue2_studio_core.store import Store
 
 from app.core.deps import store_provider, system_info_provider
@@ -52,29 +51,13 @@ def model_recommendation(
                                        compute_backend=compute_backend, memory_budget_gib=budget_gib)
 
 
-@router.put("/device")
+@router.put("/device", status_code=202)
 def select_device(
     payload: DeviceSelection,
     system: SystemInfoService = Depends(system_info_provider),
-    store: Store = Depends(store_provider),
 ) -> dict:
-    """Choose which GPU the worker runs the model on.
-
-    The change is written to the data directory, so the worker picks it up on
-    its next job without a restart. A job already running is not disturbed: it
-    finishes on the device it started on.
-    """
-    available = system.devices()
-    indices = {device["index"] for device in available["devices"] if device.get("selectable", True)}
-    if not indices:
-        raise ValidationError("Start the GPU worker before selecting a device; physical GPU indices may differ from CUDA indices.")
-    if indices and payload.device_index not in indices:
-        raise ValidationError(
-            f"GPU {payload.device_index} is not available. Present: {sorted(indices)}.",
-            details={"available": sorted(indices)},
-        )
-    store.write_runtime_settings({"device_index": payload.device_index})
-    return system.devices()
+    """Queue a switch; selection changes only after worker acknowledgement."""
+    return system.select_device(payload.device_index)
 
 
 @router.get("/vram-estimate")

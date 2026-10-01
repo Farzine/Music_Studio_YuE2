@@ -338,6 +338,14 @@ export interface GpuInventory {
   selected_index: number;
   active_index: number | null;
   pending_restart: boolean;
+  switch_command?: {
+    id: string;
+    device_index: number;
+    status: "queued" | "running" | "succeeded" | "failed";
+    worker_online: boolean;
+    progress: { stage: string; message: string } | null;
+    error: { error_code: string; error_message: string; guidance?: string } | null;
+  } | null;
   worker_online: boolean;
   cuda_available: boolean | null;
   driver_version: string | null;
@@ -606,7 +614,9 @@ export interface WorkerHeartbeat {
   worker_id: string;
   session_id?: string;
   current_command_id?: string | null;
-  runtime_capabilities?: { persistent_load: boolean; gguf_persistent_load: boolean; load_unload_commands: boolean };
+  accepting_work?: boolean;
+  shutdown?: { status: "running" | "completed" | "failed"; errors: { stage: string; message: string }[] } | null;
+  runtime_capabilities?: { persistent_load: boolean; gguf_persistent_load: boolean; load_unload_commands: boolean; select_device_commands?: boolean; shutdown_commands?: boolean };
   state: string;
   backend: string;
   updated_at: string;

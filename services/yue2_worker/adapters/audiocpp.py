@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import os
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +17,7 @@ from yue2_studio_core.parameters import gguf_unsupported_parameters
 from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store, sha256_file
 
-from .base import AudioTokensResult, BackendResult, DecodedAudio, GenerationContext, PlanResult
+from .base import AudioTokensResult, BackendResult, DecodedAudio, GenerationContext, PlanResult, settled_await, signal_child
 
 
 class AudioCppBackend:
@@ -31,6 +32,9 @@ class AudioCppBackend:
         self._semantic: np.ndarray | None = None
         self._truncated = False
         self.manager = None
+        self._process = None
+        self._communication = None
+        self._external_active = False
 
     async def get_capabilities(self) -> dict:
         return {"backend": self.name, "modes": ["full", "melody", "off", "score_edit"]}
@@ -90,40 +94,26 @@ class AudioCppBackend:
         for name, value in options.items():
             command += ["--request-option", f"{name}={value}"]
         context.reporter.begin(JobStatus.GENERATING, "generating", "Generating song with audio.cpp")
-        process = await asyncio.create_subprocess_exec(
-            *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
-        )
-        communication = asyncio.create_task(process.communicate())
+        if context.cancelled():
+            raise StudioError(ErrorCode.CANCELLED, "GGUF generation cancelled before loading.", stage="generating")
+        async def spawn():
+            self._process = await asyncio.create_subprocess_exec(
+                *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+                start_new_session=os.name == "posix")
         try:
+            await settled_await(spawn(), on_cancel=context.cancel_event.set)
+            process = self._process
+            communication = self._communication = asyncio.create_task(process.communicate())
             if self.manager is not None:
                 self.manager.external_started(config, self.device_index, process.pid)
+                self._external_active = True
             while not communication.done():
                 if context.cancelled():
-                    if process.returncode is None:
-                        try:
-                            process.terminate()
-                        except ProcessLookupError:
-                            pass
-                    try:
-                        await asyncio.wait_for(asyncio.shield(communication), timeout=10)
-                    except asyncio.TimeoutError:
-                        try:
-                            process.kill()
-                        except ProcessLookupError:
-                            pass
-                        await communication
                     raise StudioError(ErrorCode.CANCELLED, "GGUF generation cancelled.", stage="generating")
                 await asyncio.sleep(0.25)
             stdout, _ = await communication
         finally:
-            if process.returncode is None:
-                try:
-                    process.kill()
-                except ProcessLookupError:
-                    pass
-                await process.wait()
-            if self.manager is not None:
-                self.manager.external_finished()
+            await settled_await(self._stop_process())
         if process.returncode or not wav.is_file():
             raise StudioError(
                 ErrorCode.INFERENCE_FAILED,
@@ -181,5 +171,34 @@ class AudioCppBackend:
         pass
 
     async def shutdown(self) -> None:
-        self._audio = None
-        self._semantic = None
+        try:
+            await settled_await(self._stop_process())
+        finally:
+            self._audio = None
+            self._semantic = None
+
+    async def _stop_process(self) -> None:
+        process = self._process
+        if process is None:
+            return
+        communication = self._communication
+        if communication is None:
+            communication = self._communication = asyncio.create_task(process.communicate())
+        try:
+            if process.returncode is None or not communication.done():
+                signal_child(process)
+            try:
+                await asyncio.wait_for(asyncio.shield(communication), timeout=10)
+            except asyncio.TimeoutError:
+                signal_child(process, force=True)
+                await asyncio.wait_for(asyncio.shield(communication), timeout=10)
+        finally:
+            if process.returncode is None:
+                signal_child(process, force=True)
+                await asyncio.wait_for(process.wait(), timeout=10)
+            if process.returncode is not None:
+                signal_child(process, force=True)
+                self._process = self._communication = None
+                if self._external_active:
+                    self.manager.external_finished()
+                    self._external_active = False

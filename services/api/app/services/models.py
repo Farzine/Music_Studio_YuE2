@@ -26,6 +26,7 @@ class ModelService:
 
     def request_runtime(self, registry_id: str, operation: str, worker_state: dict, config: GenerationConfig | None = None) -> dict:
         with self.store.queue_lock():
+            self.commands.assert_accepting_locked(self.settings.worker_id)
             return self._request_runtime(registry_id, operation, worker_state, config)
 
     def _request_runtime(self, registry_id: str, operation: str, worker_state: dict, config: GenerationConfig | None) -> dict:
@@ -100,7 +101,7 @@ class ModelService:
         for command in self.commands.list():
             if command.status not in {"queued", "running"}:
                 continue
-            references = [command.reference]
+            references = [*command.protected_references, *([command.reference] if command.reference else [])]
             if command.config:
                 references.append(resolve_vae_reference(command.config.model.vae, self.settings))
             if any(Path(ref).resolve().is_relative_to(target) or target.is_relative_to(Path(ref).resolve()) for ref in references):

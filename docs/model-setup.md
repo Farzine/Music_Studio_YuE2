@@ -256,8 +256,15 @@ again. A successful command result describes that moment, not future residency.
 Unload releases the complete managed pipeline and resources. If close/cache cleanup
 fails, `MODEL_UNLOAD_FAILED` and UNLOAD_FAILED remain visible, and new loads are
 blocked until explicit Unload succeeds. CUDA contexts and other processes' memory
-are not model residency; physical release/switch verification and shutdown hardening
-remain subsequent work. Hard OS termination cannot guarantee Python cleanup.
+are not model residency. GPU switching now waits for active inference, checks
+native references/child exit and worker CUDA allocator cleanup, then prepares the
+previous model on the target before committing the device. Target failure attempts
+rollback; uncertain cleanup blocks another allocation. See [Choosing a GPU](api.md#choosing-a-gpu)
+for queued stages, errors and deferred vLLM/audio.cpp loading. Physical GPU smoke
+verification remains pending. Graceful worker/API shutdown now settles active
+operations, attempts model/VAE/child cleanup and records acknowledgement/errors;
+see [Shutdown](api.md#shutdown) for coupling, deadlines and interrupted-job recovery.
+Hard OS termination cannot guarantee Python cleanup.
 
 `MODEL_IDLE_UNLOAD_SECONDS=0` (the default) keeps the checkpoint resident
 between jobs; reloading 7.26 GB per request would dominate a short generation.

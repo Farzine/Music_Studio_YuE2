@@ -33,6 +33,7 @@ from yue2_studio_core.models import (
 )
 from yue2_studio_core.parameters import config_from_overrides, gguf_unsupported_parameters, unsupported_parameters_in_use
 from yue2_studio_core.queue import FilesystemJobQueue
+from yue2_studio_core.runtime_commands import RuntimeCommands
 from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store
 
@@ -258,6 +259,7 @@ class GenerationService:
     ) -> tuple[GenerationJob, SongProject, list[str]]:
         # Admission and deletion use the same lock: validation cannot race file removal.
         with self.store.queue_lock():
+            RuntimeCommands(self.store).assert_accepting_locked(self.settings.worker_id)
             return self._create_generation(overrides=overrides, project_id=project_id,
                                            title=title, tags=tags, priority=priority,
                                            parent_generation_id=parent_generation_id)

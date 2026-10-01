@@ -15,10 +15,12 @@ import os
 import subprocess
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 from yue2_studio_core.errors import ErrorCode, StudioError
 from yue2_studio_core.settings import Settings
+from .base import signal_child
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,8 @@ class SheetSage2Transcriber:
         cancelled=None,
         on_progress=None,
     ) -> TranscriptionResult:
+        if cancelled is not None and cancelled():
+            raise StudioError(ErrorCode.CANCELLED, "Cancelled before transcription started.", stage="transcribing")
         ok, reason = self.available()
         if not ok:
             raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, reason or "Cover is unavailable.", stage="transcribing")
@@ -67,7 +71,14 @@ class SheetSage2Transcriber:
 
         environment = dict(os.environ)
         # Pin the child to the selected card; inside the child it is device 0.
-        environment["CUDA_VISIBLE_DEVICES"] = str(device_index)
+        visible = environment.get("CUDA_VISIBLE_DEVICES")
+        if visible is not None:
+            devices = [entry.strip() for entry in visible.split(",")]
+            if device_index not in range(len(devices)) or not devices[device_index] or devices[device_index] == "-1":
+                raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, f"GPU {device_index} is unavailable under CUDA_VISIBLE_DEVICES.", stage="transcribing")
+            environment["CUDA_VISIBLE_DEVICES"] = devices[device_index]
+        else:
+            environment["CUDA_VISIBLE_DEVICES"] = str(device_index)
         ffmpeg_dir = self.settings.ffmpeg_path.parent
         environment["PATH"] = f"{ffmpeg_dir}{os.pathsep}{environment.get('PATH', '')}"
         environment["PYTHONPATH"] = str(REPO_ROOT)
@@ -100,43 +111,60 @@ class SheetSage2Transcriber:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=os.name == "posix",
         )
 
         # The encoder reports "Window n/total" as it goes; forward that as real
         # progress rather than inventing a percentage.
-        def pump() -> None:
-            assert process.stdout is not None
-            for line in process.stdout:
-                line = line.strip()
-                if on_progress and line.startswith("Window "):
-                    try:
-                        completed, total = line.removeprefix("Window ").split("/")
-                        on_progress(int(completed), int(total))
-                    except (ValueError, IndexError):
-                        pass
-
-        reader = threading.Thread(target=pump, daemon=True, name="sheetsage2-progress")
-        reader.start()
-
-        deadline = started + self.settings.sheetsage2_timeout_seconds
-        while process.poll() is None:
-            if cancelled is not None and cancelled():
-                process.terminate()
-                try:
-                    process.wait(timeout=20)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                raise StudioError(ErrorCode.CANCELLED, "Cancelled while transcribing.", stage="transcribing")
-            if time.monotonic() > deadline:
-                process.kill()
-                raise StudioError(
-                    ErrorCode.AUDIO_INPUT_ERROR,
-                    f"Transcription exceeded {self.settings.sheetsage2_timeout_seconds}s and was stopped.",
-                    stage="transcribing",
-                )
-            time.sleep(0.5)
-        reader.join(timeout=5)
-        stderr = (process.stderr.read() if process.stderr else "") or ""
+        stderr_lines, reader_errors = deque(maxlen=50), []
+        def pump(stream, progress=False):
+            try:
+                for line in stream:
+                    line = line.strip()
+                    if not progress:
+                        stderr_lines.append(line)
+                    elif on_progress and line.startswith("Window "):
+                        try:
+                            completed, total = line.removeprefix("Window ").split("/")
+                            on_progress(int(completed), int(total))
+                        except (ValueError, IndexError):
+                            pass
+            except Exception as exc:
+                reader_errors.append(exc)
+        readers = []
+        try:
+            for stream, progress in ((process.stdout, True), (process.stderr, False)):
+                reader = threading.Thread(target=pump, args=(stream, progress), daemon=True, name="sheetsage2-stream")
+                reader.start()
+                readers.append(reader)
+            deadline = started + self.settings.sheetsage2_timeout_seconds
+            while process.poll() is None:
+                if cancelled is not None and cancelled():
+                    raise StudioError(ErrorCode.CANCELLED, "Cancelled while transcribing.", stage="transcribing")
+                if reader_errors:
+                    raise reader_errors[0]
+                if time.monotonic() > deadline:
+                    raise StudioError(ErrorCode.AUDIO_INPUT_ERROR, f"Transcription exceeded {self.settings.sheetsage2_timeout_seconds}s and was stopped.", stage="transcribing")
+                time.sleep(0.1)
+        finally:
+            # Always reap, including timeout, callback/startup errors and cancel.
+            signal_child(process)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                signal_child(process, force=True)
+                process.wait(timeout=10)
+            finally:
+                if process.poll() is not None:
+                    signal_child(process, force=True)  # inherited pipe handles/descendants
+                    for reader in readers:
+                        reader.join(timeout=5)
+                    for stream in (process.stdout, process.stderr):
+                        if stream is not None:
+                            stream.close()
+        if reader_errors:
+            raise reader_errors[0]
+        stderr = "\n".join(stderr_lines)
 
         payload: dict = {}
         if report_path.is_file():

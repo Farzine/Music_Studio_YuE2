@@ -88,7 +88,8 @@ def test_exclusive_worker_invocation_preserves_other_session(runtime_worker):
     assert worker.commands.get(queued.id).status == "queued"
 
 
-def test_unload_waits_for_active_inference_and_runs_before_next_job(runtime_worker, monkeypatch):
+@pytest.mark.parametrize("operation", ["unload", "select_device"])
+def test_control_waits_for_active_inference_and_runs_before_next_job(runtime_worker, monkeypatch, operation):
     from yue2_studio_core.ids import new_id
     from yue2_studio_core.models import GenerationJob, JobStatus
     worker = runtime_worker
@@ -102,6 +103,7 @@ def test_unload_waits_for_active_inference_and_runs_before_next_job(runtime_work
         original = worker.backend.generate_plan
         calls = []
         async def block(context):
+            assert context.device_index == 0
             calls.append(context.job_id)
             entered.set()
             await finish.wait()
@@ -116,11 +118,13 @@ def test_unload_waits_for_active_inference_and_runs_before_next_job(runtime_work
         try:
             await asyncio.wait_for(entered.wait(), 5)
             assert worker.manager.state()["lifecycle"] == "IN_USE"
-            queued = command(worker, "unload")
+            queued = command(worker, operation)
             assert worker.commands.get(queued.id).status == "queued" and worker.manager.loaded
+            assert worker.store.device_index() == 0
             finish.set()
             await asyncio.wait_for(task, 10)
             assert worker.commands.get(queued.id).status == "succeeded"
+            assert worker.store.device_index() == (1 if operation == "select_device" else 0)
             assert worker.store.get_job(first.id).status is JobStatus.COMPLETED
             assert len(calls) == 1  # second queued job did not bypass control
         finally:

@@ -1,9 +1,4 @@
-"""Model lifecycle.
-
-The 7.26 GB checkpoint is loaded once and kept resident between jobs. It is
-only rebuilt when a job asks for a different model, decoder, precision or
-memory budget, and it is only torn down when the idle policy says so.
-"""
+"""Worker-owned native model/VAE residency and device transitions."""
 from __future__ import annotations
 
 import logging
@@ -56,6 +51,7 @@ class ModelManager:
         self._last_used: float | None = None
         self._files_lease = None
         self._cleanup_device: int | None = None
+        self._reload_config: GenerationConfig | None = None
         self._snapshot: dict = {}
         self._publish(ModelLifecycle.UNLOADED)
 
@@ -197,6 +193,9 @@ class ModelManager:
                 self._check_runtime(config, key)
                 self._cleanup_device = key.device_index
                 result = self._load(config, key)
+                self._reload_config = config.model_copy(deep=True)
+                self._reload_config.model.checkpoint = key.model
+                self._reload_config.model.vae = key.vae
                 self._publish(ModelLifecycle.LOADED)
                 return result
             except BaseException as exc:
@@ -210,13 +209,7 @@ class ModelManager:
 
     def _check_runtime(self, config: GenerationConfig, key: PipelineKey) -> None:
         """Fresh worker-side device and shared safety estimate before allocation."""
-        try:
-            import torch
-        except ImportError as exc:
-            raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "PyTorch is unavailable in the GPU worker environment; check the worker installation.", stage="loading_model") from exc
-
-        if not torch.cuda.is_available() or key.device_index not in range(torch.cuda.device_count()):
-            raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, f"GPU {key.device_index} is unavailable in this worker.", stage="loading_model")
+        torch = self._validate_device(key.device_index)
         properties = torch.cuda.get_device_properties(key.device_index)
         precision = precision_capabilities((properties.major, properties.minor))
         if precision["bf16_supported"] is False or (key.quantization == "fp8" and precision["fp8_supported"] is False):
@@ -291,7 +284,12 @@ class ModelManager:
             self._publish(ModelLifecycle.UNLOADING)
             try:
                 if pipeline is not None:
+                    child = getattr(getattr(pipeline, "_vllm_worker", None), "process", None)
                     pipeline.close()
+                    if child is not None and child.poll() is None:
+                        raise RuntimeError("The vLLM child is still running after close.")
+                    if any(getattr(pipeline, name, None) is not None for name in ("_model", "_vae", "_vllm_worker")):
+                        raise RuntimeError("The native pipeline still retains model/VAE resources after close.")
                     self._pipeline = None
                     del pipeline
                     gc.collect()
@@ -306,6 +304,7 @@ class ModelManager:
                 raise error from exc
             self._key = None
             self._cleanup_device = None
+            self._reload_config = None
             self._loaded_at = None
             self._last_used = None
             self._publish(ModelLifecycle.UNLOADED)
@@ -315,8 +314,74 @@ class ModelManager:
         import torch
 
         with torch.cuda.device(device_index):
+            torch.cuda.synchronize(device_index)
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
+            allocated = torch.cuda.memory_allocated(device_index)
+            reserved = torch.cuda.memory_reserved(device_index)
+            if allocated or reserved:
+                # The serial worker has no concurrent local CUDA owner. Other
+                # processes/context memory is outside this allocator's scope.
+                raise RuntimeError(f"GPU {device_index} retains {allocated} allocated / {reserved} reserved worker CUDA bytes. Retry unload before switching.")
+
+    @staticmethod
+    def _validate_device(device_index: int):
+        try:
+            import torch
+        except ImportError as exc:
+            raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "PyTorch is unavailable in the GPU worker environment; check the worker installation.", stage="loading_model") from exc
+        if not torch.cuda.is_available() or device_index not in range(torch.cuda.device_count()):
+            raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, f"GPU {device_index} is unavailable in this worker.", stage="loading_model")
+        return torch
+
+    def switch_device(self, device_index: int, on_stage) -> None:
+        """Settle/release/reload before committing selection; never overlap loads."""
+        with self._lock:
+            if self._store is None:
+                raise ConflictError("Device selection requires the worker's application store.")
+            if self._snapshot["lifecycle"] in {ModelLifecycle.IN_USE.value, ModelLifecycle.UNLOAD_FAILED.value}:
+                raise ConflictError("Finish active inference or successfully retry unload before switching GPUs.")
+            self._validate_device(device_index)
+            previous_index, previous_key = self.device_index, self._key
+            config = self._reload_config.model_copy(deep=True) if self._reload_config else None
+            if self._pipeline is not None and config is None:
+                raise ConflictError("The resident model has no reload configuration. Unload it before switching GPUs.")
+            if previous_index == device_index and (previous_key is None or previous_key.device_index == device_index):
+                on_stage("ready", f"GPU {device_index} is already selected.")
+                return
+            references = [previous_key.model, previous_key.vae] if previous_key else []
+            # Keep rollback files pinned across both releases and reloads.
+            with model_file_leases(self._store, references):
+                on_stage("unloading", f"Unloading resources from GPU {previous_key.device_index if previous_key else previous_index}.")
+                self.release()  # failure here must never allocate on the target
+                on_stage("released", "Previous model resources released." if previous_key else "No resident model; ready to change device.")
+                try:
+                    if config is not None:
+                        on_stage("loading", f"Preparing the selected model on GPU {device_index}.")
+                        self.acquire(config, device_index)
+                    # Commit last; queued inference cannot observe an untested
+                    # selection. The pending command still gates job claims.
+                    with self._store.queue_lock():
+                        self._store.write_runtime_settings({"device_index": device_index})
+                except Exception as exc:
+                    rollback_error = None
+                    try:
+                        on_stage("rolling_back", f"Switch failed; restoring GPU {previous_index}.")
+                        self.release()  # uncertain target cleanup blocks old load
+                        with self._store.queue_lock():
+                            self._store.write_runtime_settings({"device_index": previous_index})
+                        if config is not None:
+                            self.acquire(config, previous_key.device_index)
+                        on_stage("restored", f"Previous GPU {previous_index} configuration restored.")
+                    except Exception as cleanup:
+                        rollback_error = str(cleanup)
+                    error = exc if isinstance(exc, StudioError) else StudioError(classify_exception(exc), str(exc))
+                    raise StudioError(error.code, f"GPU switch to {device_index} failed: {error.message}. " +
+                                      (f"Rollback failed: {rollback_error}. Retry unload and inspect runtime state." if rollback_error else f"Previous GPU {previous_index} configuration restored."),
+                                      stage="switching_gpu", details={**error.details, "rollback_succeeded": rollback_error is None,
+                                                                    "rollback_error": rollback_error}) from exc
+                deferred = config is None or config.model.compute_backend == "vllm"
+                on_stage("ready", f"GPU {device_index} selected. " + ("Weights load during the next generation." if deferred else "Native model ready; VAE loads during decoding."))
 
     def begin_use(self) -> None:
         with self._lock:

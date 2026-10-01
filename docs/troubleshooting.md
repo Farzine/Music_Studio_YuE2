@@ -112,6 +112,46 @@ continuation, resume or audio-prefix entry point, so a longer song genuinely
 cannot be assembled from segments. The remedies are real ones: a shorter
 duration, or shorter lyrics to free context.
 
+## Device switch did not complete
+
+GPU selection returns a queued request; an active generation finishes first.
+Inspect System → GPU or GET `/api/v1/system/gpus` for `switch_command.status`,
+the latest worker stage and any error. `selected_index` remains the committed
+device until target preparation succeeds. A queued request with `worker_online=false`
+has no acknowledgement; start the worker and inspect recovery before retrying.
+
+`CUDA_OOM` or target-load failure attempts previous-device/model restoration;
+`rollback_succeeded=false` means restoration also failed. If lifecycle is
+UNLOAD_FAILED, retry Unload before another Load/switch. The worker refuses another
+allocation while old/target cleanup is uncertain. Worker allocator verification
+does not require other applications' VRAM or CUDA driver contexts to disappear.
+Old workers without switch-command support need an update/restart once; subsequent
+GPU switches do not require restarting the application. Native VAE, vLLM child and
+audio.cpp weights retain their documented lazy/per-generation loading behavior.
+
+## Shutdown failed or was not acknowledged
+
+Read System → Worker → Shutdown and `shutdown.errors` in the worker heartbeat.
+`WORKER_SHUTDOWN_FAILED` may describe bookkeeping or backend cleanup errors;
+`model.lifecycle=UNLOAD_FAILED` specifically means native release was not confirmed.
+The worker attempts remaining cleanup stages and writes stopped state even after a
+failure. Check the worker logs and process list; do not infer physical GPU release
+from an offline indicator alone.
+
+Normal API exit requests the configured worker's stop and waits up to
+`WORKER_SHUTDOWN_TIMEOUT_SECONDS`. A timeout leaves an unacknowledged request;
+inspect the worker rather than assuming completion. A native load/decode without
+a cancellation seam finishes before cleanup. `scripts/dev_api.sh --reload` defaults
+`WORKER_SHUTDOWN_ON_API_EXIT` off so code reload does not terminate the worker;
+use `make stop` or signal the worker when ending that session. An independent
+deployment that disables coupling must stop the worker separately.
+
+Waiting generations survive shutdown. Abandoned active generations become
+failed/cancelled on restart and are never automatically replayed. Interrupted
+downloads retain private staging for Retry; normal ASGI background transfers finish
+before lifespan cleanup. SIGKILL, driver hangs and escaped child processes cannot
+always run or complete Python cleanup.
+
 ## torch does not see the GPU
 
 ```bash

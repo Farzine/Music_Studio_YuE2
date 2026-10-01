@@ -11,11 +11,54 @@ applies the request as given or raises, and the reason reaches the user.
 from __future__ import annotations
 
 import threading
+import asyncio
+import contextlib
+import os
+import signal
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from yue2_studio_core.models import GenerationConfig, JobStatus
+
+
+async def settled_call(function, *args, on_cancel=None, **kwargs):
+    """Cancellation cannot detach a thread still using model/file resources."""
+    return await settled_await(asyncio.to_thread(function, *args, **kwargs), on_cancel=on_cancel)
+
+
+async def settled_await(awaitable, *, on_cancel=None):
+    task = asyncio.ensure_future(awaitable)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        try:
+            if on_cancel is not None:
+                on_cancel()
+        finally:
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    continue
+                except BaseException:
+                    break
+            with contextlib.suppress(BaseException):
+                task.result()
+        raise
+
+
+def signal_child(process, *, force=False):
+    """Children are launched in their own POSIX session, including descendants."""
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
+        elif force:
+            process.kill()
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        pass
 
 
 class ProgressReporter(Protocol):
@@ -41,6 +84,7 @@ class GenerationContext:
     config: GenerationConfig
     reporter: ProgressReporter
     cancel_event: threading.Event
+    device_index: int | None = None
 
     def cancelled(self) -> bool:
         return self.cancel_event.is_set()

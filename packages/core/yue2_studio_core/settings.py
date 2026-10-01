@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     max_concurrent_gpu_jobs: int = 1
     worker_id: str = "local-gpu-0"
     worker_poll_interval_seconds: float = 0.5
+    worker_shutdown_on_api_exit: bool = True
+    worker_shutdown_timeout_seconds: float = Field(default=60.0, ge=0, le=3600, allow_inf_nan=False)
     #: How often a running job re-reads its own record to notice a cancellation.
     cancel_poll_interval_seconds: float = 0.25
     yue2_backend: str = Field(default="native", description="native | mock | comfy")

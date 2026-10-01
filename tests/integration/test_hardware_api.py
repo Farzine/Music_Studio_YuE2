@@ -25,7 +25,8 @@ def test_hardware_scan_ram_and_worker_gpu_selection(api_client, monkeypatch):
     body = response.json()
     assert {"total_bytes", "available_bytes", "used_bytes", "source", "logical_cpu_count"} <= body["memory"].keys()
     assert body["devices"]["devices"][0]["cuda_runtime"] == "12.6"
-    assert api_client.put("/api/v1/system/device", json={"device_index": 0}).status_code == 200
+    # Legacy heartbeat remains useful for display, but cannot acknowledge a switch.
+    assert api_client.put("/api/v1/system/device", json={"device_index": 0}).status_code == 409
     assert api_client.put("/api/v1/system/device", json={"device_index": 1}).status_code == 422
 
 

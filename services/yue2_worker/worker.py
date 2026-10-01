@@ -40,7 +40,7 @@ from yue2_studio_core.queue import FilesystemJobQueue  # noqa: E402
 from yue2_studio_core.settings import get_settings  # noqa: E402
 from yue2_studio_core.store import Store, file_lock, write_json_atomic  # noqa: E402
 
-from services.yue2_worker.adapters.base import GenerationContext  # noqa: E402
+from services.yue2_worker.adapters.base import GenerationContext, settled_call  # noqa: E402
 from services.yue2_worker.adapters.audiocpp import AudioCppBackend  # noqa: E402
 from services.yue2_worker.engine import artifacts as artifact_writer  # noqa: E402
 from services.yue2_worker.jobs.reporter import JobProgressReporter  # noqa: E402
@@ -187,6 +187,8 @@ class Worker:
         self._current: GenerationJob | None = None
         self._job_device_index: int | None = None
         self._cancel_current: threading.Event | None = None
+        self._shutdown_state: dict | None = None
+        self._active_backend = None
 
     # -- heartbeat --------------------------------------------------------- #
 
@@ -195,6 +197,8 @@ class Worker:
         return self.store.root / "worker" / f"{self.worker_id}.json"
 
     def write_heartbeat(self, state: str) -> None:
+        if self._stop.is_set() and state != "stopped":
+            state = "stopping"
         model_state = self.manager.state()
         payload = {
             "worker_id": self.worker_id,
@@ -204,8 +208,11 @@ class Worker:
             "updated_at": utcnow().isoformat(),
             "current_generation_id": self._current.id if self._current else None,
             "current_command_id": self._command.id if self._command else None,
+            "accepting_work": not self._stop.is_set(),
+            "shutdown": self._shutdown_state,
             "runtime_capabilities": {"persistent_load": self.settings.yue2_backend == "native",
-                                     "gguf_persistent_load": False, "load_unload_commands": self.settings.yue2_backend == "native"},
+                                     "gguf_persistent_load": False, "load_unload_commands": self.settings.yue2_backend == "native",
+                                     "select_device_commands": self.settings.yue2_backend == "native", "shutdown_commands": True},
             "max_concurrent_gpu_jobs": self.settings.max_concurrent_gpu_jobs,
             "model": model_state,
             "runtime": self.manager.runtime_versions(),
@@ -220,6 +227,9 @@ class Worker:
         while not self._stop.is_set():
             state = "busy" if self._current or self._command else "idle"
             try:
+                if self.commands.shutdown_requested(self.worker_id, self.session_id):
+                    self.request_stop()
+                    break
                 self.write_heartbeat(state)
             except Exception:
                 logger.exception("heartbeat failed")
@@ -247,17 +257,20 @@ class Worker:
     async def run_command(self, command) -> None:
         """Serialized with jobs by the worker loop; no control thread mutates CUDA."""
         self._command = command
-        self.write_heartbeat("busy")
         try:
+            self.write_heartbeat("busy")
             if self.settings.yue2_backend != "native":
                 raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "This worker does not own a native resident model; start the native worker for load/unload commands.")
             if hasattr(self.backend, "end_job"):
                 self.backend.end_job()
-            if command.operation == "unload":
+            if command.operation == "select_device":
+                await settled_call(self.manager.switch_device, command.device_index,
+                                   lambda stage, message: self.commands.advance(command, stage, message), on_cancel=self.request_stop)
+            elif command.operation == "unload":
                 state = self.manager.state()
                 if state.get("model") and Path(state["model"]).resolve() != Path(command.reference).resolve():
                     raise StudioError(ErrorCode.CONFLICT, "A different model is resident. Refresh runtime state and unload that model explicitly.")
-                await asyncio.to_thread(self.manager.release)
+                await settled_call(self.manager.release, on_cancel=self.request_stop)
             else:
                 config = command.config
                 if config is None or self.manager.resolve_model(config) != command.reference:
@@ -266,10 +279,13 @@ class Worker:
                     raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "audio.cpp CLI loads GGUF weights per generation; persistent Load is unavailable. Select this model in a generation task.")
                 if config.model.compute_backend == "vllm":
                     raise StudioError(ErrorCode.UNSUPPORTED_CAPABILITY, "The pinned vLLM backend has no preload command; use torch/torch-eager or select vLLM for a generation task.")
-                await asyncio.to_thread(self.manager.acquire, config, command.device_index)
+                await settled_call(self.manager.acquire, config, command.device_index, on_cancel=self.request_stop)
             self.commands.finish(command, result=self.manager.state())
-        except Exception as exc:
-            error = exc.to_dict() if isinstance(exc, StudioError) else StudioError(classify_exception(exc), f"Runtime {command.operation} failed: {exc}").to_dict()
+        except BaseException as exc:
+            interrupted = isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit))
+            if interrupted:
+                self.request_stop()
+            error = exc.to_dict() if isinstance(exc, StudioError) else StudioError(ErrorCode.CANCELLED if interrupted else classify_exception(exc), f"Runtime {command.operation} failed: {exc}").to_dict()
             self.commands.finish(command, result=self.manager.state(), error=error)
             logger.error("runtime command failed: %s", error["error_message"])
         finally:
@@ -279,14 +295,21 @@ class Worker:
     async def run_job(self, job: GenerationJob) -> None:
         from yue2_studio_core.model_files import model_file_leases
 
-        with model_file_leases(self.store, [self.manager.resolve_model(job.config), self.manager.resolve_vae(job.config)]):
-            await self._run_job(job)
+        try:
+            with model_file_leases(self.store, [self.manager.resolve_model(job.config), self.manager.resolve_vae(job.config)]):
+                await self._run_job(job)
+        finally:
+            self.manager.end_use()
+            self._current = None
+            self._job_device_index = None
+            self._cancel_current = None
 
     async def _run_job(self, job: GenerationJob) -> None:
         self._current = job
         self._job_device_index = self.manager.device_index
         is_gguf = is_gguf_model(self.manager.resolve_model(job.config))
         backend = AudioCppBackend(self.settings, self.store, self._job_device_index) if is_gguf else self.backend
+        self._active_backend = backend
         if is_gguf:
             # Shared report checks apply to GGUF as well as native paths.
             backend.manager = self.manager
@@ -298,17 +321,22 @@ class Worker:
             target=self._cancel_watcher, args=(job.id, cancel_event, done), daemon=True, name="cancel-watch"
         )
         watcher.start()
-        directory = self.store.prepare_generation_dir(job.project_id, job.id)
+        directory = self.store.generation_dir(job.project_id, job.id)
         context = GenerationContext(
-            job_id=job.id, config=job.config, reporter=reporter, cancel_event=cancel_event
+            job_id=job.id, config=job.config, reporter=reporter, cancel_event=cancel_event,
+            device_index=self._job_device_index,
         )
         started = time.perf_counter()
         reset_gpu_peak(self._job_device_index)
         try:
+            self.store.prepare_generation_dir(job.project_id, job.id)
+            if self._stop.is_set():
+                cancel_event.set()
+                raise StudioError(ErrorCode.CANCELLED, "Worker stopping before inference started.")
             if is_gguf:
                 self.backend.end_job() if hasattr(self.backend, "end_job") else None
-                await asyncio.to_thread(self.manager.release)
-                await asyncio.to_thread(self.manager.verify_files, job.config)
+                await settled_call(self.manager.release, on_cancel=self.request_stop)
+                await settled_call(self.manager.verify_files, job.config, on_cancel=self.request_stop)
             warnings = await backend.validate_config(job.config)
             for message in warnings:
                 reporter.note(message, severity="WARNING")
@@ -447,6 +475,9 @@ class Worker:
             self.store.save_project(project)
 
         except BaseException as exc:  # noqa: BLE001 - every failure is recorded
+            if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
+                cancel_event.set()
+                self.request_stop()
             code = exc.code if isinstance(exc, StudioError) else classify_exception(exc)
             stage = exc.stage if isinstance(exc, StudioError) else job.progress.stage
             message = exc.message if isinstance(exc, StudioError) else f"{type(exc).__name__}: {exc}"
@@ -470,15 +501,14 @@ class Worker:
             logger.error("generation failed", extra={"generation_id": job.id, "stage": stage}, exc_info=not cancelled)
         finally:
             done.set()
-            reporter.flush()
-            if is_gguf:
-                await backend.shutdown()
-            elif hasattr(backend, "end_job"):
-                backend.end_job()
-            self.manager.end_use()
-            self._current = None
-            self._job_device_index = None
-            self._cancel_current = None
+            try:
+                reporter.flush()
+            finally:
+                if is_gguf:
+                    await backend.shutdown()
+                elif hasattr(backend, "end_job"):
+                    backend.end_job()
+                self._active_backend = None
 
     # -- main loop --------------------------------------------------------- #
 
@@ -491,28 +521,34 @@ class Worker:
 
     async def _run(self) -> None:
         logger.info("worker %s starting on backend %s", self.worker_id, self.settings.yue2_backend)
-        self.commands.recover(self.worker_id, self.session_id)
-        self.write_heartbeat("starting")
-        heartbeat = asyncio.create_task(self._heartbeat_loop())
+        heartbeat = None
         try:
+            self.commands.recover(self.worker_id, self.session_id)
+            self._settle_jobs(restarting=True)
+            self.write_heartbeat("starting")
+            heartbeat = asyncio.create_task(self._heartbeat_loop())
             while not self._stop.is_set():
+                if self.commands.shutdown_requested(self.worker_id, self.session_id):
+                    self.request_stop()
+                    break
                 command = self.commands.claim(self.worker_id, self.session_id)
                 if command is not None:
                     await self.run_command(command)
                     if self.once:
                         break
                     continue
-                job = await asyncio.to_thread(
-                    self.queue.claim, self.worker_id
-                )
+                job = await settled_call(self.queue.claim, self.worker_id, on_cancel=self.request_stop)
+                if self._stop.is_set() or self.commands.shutdown_requested(self.worker_id, self.session_id):
+                    self.request_stop()
+                    break
                 if job is None:
                     # Lifecycle mutations belong to this serial loop, not the
                     # heartbeat task: an idle timer cannot race a new acquire.
                     if hasattr(self.backend, "end_job"):
                         self.backend.end_job()
                     try:
-                        await asyncio.to_thread(self.manager.release_if_device_changed)
-                        await asyncio.to_thread(self.manager.maybe_unload_idle)
+                        await settled_call(self.manager.release_if_device_changed, on_cancel=self.request_stop)
+                        await settled_call(self.manager.maybe_unload_idle, on_cancel=self.request_stop)
                     except StudioError:
                         logger.exception("idle resource cleanup failed; explicit unload retry required")
                     if self.once:
@@ -527,19 +563,70 @@ class Worker:
                 if self.once:
                     break
         finally:
-            self._stop.set()
+            await self._shutdown(heartbeat)
+
+    def _settle_jobs(self, *, restarting: bool = False) -> None:
+        # Exclusive worker process lease establishes that no old invocation is
+        # still using these jobs. Never replay an interrupted generation.
+        with self.store.queue_lock():
+            for job in self.store.iter_jobs():
+                if job.worker_id != self.worker_id or not job.status.is_active:
+                    continue
+                cancelled = not restarting or job.cancel_requested or self.store.is_cancel_requested(job.id)
+                job.status = JobStatus.CANCELLED if cancelled else JobStatus.FAILED
+                job.error_code = ErrorCode.CANCELLED.value if cancelled else ErrorCode.INFERENCE_FAILED.value
+                job.error_message = "Worker stopped before inference finished." if cancelled else "Previous worker exited before inference finished. Generate a new take; this job was not replayed."
+                job.finished_at = utcnow()
+                self.store.save_job(job)
+
+    async def _shutdown(self, heartbeat) -> None:
+        self.request_stop()
+        errors = []
+        self._shutdown_state = {"status": "running", "errors": errors}
+        async def attempt(stage, action):
+            try:
+                await action()
+                return True
+            except BaseException as exc:
+                errors.append({"stage": stage, "message": str(exc) or type(exc).__name__})
+                logger.exception("worker shutdown step failed: %s", stage)
+                return False
+        if heartbeat is not None:
             heartbeat.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await heartbeat
-            await self.backend.shutdown()
-            self.manager.release()
-            self.write_heartbeat("stopped")
-            logger.info("worker stopped")
+            async def stop_heartbeat():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await heartbeat
+            await attempt("heartbeat", stop_heartbeat)
+        if hasattr(self.backend, "end_job"):
+            await attempt("adapter_references", lambda: settled_call(self.backend.end_job))
+        if self._active_backend is not None and self._active_backend is not self.backend:
+            if await attempt("active_child", self._active_backend.shutdown):
+                self._active_backend = None
+        await attempt("backend", self.backend.shutdown)
+        await attempt("model_resources", lambda: settled_call(self.manager.release))
+        await attempt("jobs", lambda: settled_call(self._settle_jobs))
+        self._shutdown_state["status"] = "failed" if errors else "completed"
+        error = StudioError(ErrorCode.WORKER_SHUTDOWN_FAILED, "Worker shutdown encountered cleanup errors; inspect runtime shutdown details.", details={"errors": errors}).to_dict() if errors else None
+        await attempt("commands", lambda: settled_call(self.commands.close_session, self.worker_id, self.session_id,
+                                                      result=self.manager.state(), error=error))
+        self._shutdown_state["status"] = "failed" if errors else "completed"
+        await attempt("stopped_heartbeat", lambda: settled_call(self.write_heartbeat, "stopped"))
+        logger.info("worker stopped")
+        if errors:
+            raise StudioError(ErrorCode.WORKER_SHUTDOWN_FAILED, "Worker shutdown cleanup failed.", details={"errors": errors})
 
     def request_stop(self) -> None:
+        if self._stop.is_set():
+            return
         self._stop.set()
         if self._cancel_current is not None:
             self._cancel_current.set()
+        for action in (lambda: self.commands.request_shutdown(self.worker_id, self.session_id),
+                       lambda: self.write_heartbeat("stopping")):
+            try:
+                action()
+            except Exception:
+                logger.exception("could not persist worker stop state; local cancellation remains active")
 
 
 async def main_async(once: bool) -> int:

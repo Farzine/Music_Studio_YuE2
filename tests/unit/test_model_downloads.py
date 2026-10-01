@@ -31,6 +31,20 @@ def manager(tmp_path):
     return ModelDownloads(settings, Store(settings))
 
 
+def test_api_shutdown_fails_queued_download_but_preserves_live_transfer(tmp_path, download_package):
+    from yue2_studio_core.store import file_lock
+    downloads = manager(tmp_path)
+    job = downloads.start("owner/repository", "custom.gguf", "main")
+    with file_lock(downloads.root / f".{job['id']}.run.lock"):
+        downloads.shutdown()
+        assert downloads.get(job["id"])["status"] == "queued"
+    downloads.shutdown()
+    stopped = downloads.get(job["id"])
+    assert stopped["status"] == "failed" and stopped["registry_id"] is None
+    assert "API stopped" in stopped["error"]
+    assert downloads.retry(job["id"])["status"] == "queued"
+
+
 def test_gguf_download_is_registered_only_after_verification(tmp_path, monkeypatch, download_package):
     downloads = manager(tmp_path)
     with pytest.raises(ValidationError):

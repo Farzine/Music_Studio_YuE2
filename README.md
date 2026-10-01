@@ -291,6 +291,8 @@ COMFY_WORKFLOW_PATH=./yue2_full.json
 | `DATA_DIR` | Where projects, versions, audio, uploads and presets live. This is the whole database. |
 | `CONFIGS_DIR` | Where the parameter registry and defaults are read from. |
 | `MAX_CONCURRENT_GPU_JOBS` | How many generations may run at once. 1 on a single card. |
+| `WORKER_SHUTDOWN_ON_API_EXIT` | Normal API exit requests worker cleanup (default `true`). The dev `--reload` launcher defaults it off; export explicitly to override. |
+| `WORKER_SHUTDOWN_TIMEOUT_SECONDS` | API acknowledgement wait (default 60 seconds); timeout is reported, without claiming GPU release. |
 | `WORKER_ID` | Name this worker reports under. Must be unique if you run more than one. |
 | `WORKER_POLL_INTERVAL_SECONDS` | How often the worker looks for a new job. |
 | `CANCEL_POLL_INTERVAL_SECONDS` | How often a running job checks whether you cancelled it. |
@@ -568,13 +570,33 @@ regenerating all leave every earlier version exactly as it was.
 
 ---
 
+## Graceful shutdown
+
+Graceful worker stop (SIGINT/SIGTERM) cancels inference at safe boundaries, waits
+for active native calls, unloads model/VAE resources and reaps local child processes.
+Cleanup failures remain visible in the System page's stopped heartbeat. Normal API
+exit requests the configured worker's shutdown through the command journal; API
+code never loads CUDA models. Development hot reload keeps the independently
+launched worker running. See [shutdown behavior](docs/api.md#shutdown) for settings,
+timeouts, queued work and interrupted downloads. Hard termination cannot guarantee
+Python cleanup; physical GPU shutdown verification still needs a smoke test.
+
 ## Choosing a GPU
 
 On a machine with more than one card, or one shared with other work, the System
 page lists every GPU with its free memory, its utilisation and how much other
 processes are holding, and lets you pick which one loads the model. The choice is
-stored in `data/runtime-settings.json` and applies to the next generation; a run
-already in flight finishes on the card it started on.
+committed to `data/runtime-settings.json` after the worker completes the switch;
+a run already in flight finishes on the card it started on. The System page shows
+queued/unloading/released/loading stages and the acknowledgement. Native resources
+are released before target loading; failure attempts to restore the old model and
+selection. Failed cleanup requires an explicit Unload retry. No restart is needed.
+
+Native torch weights reload on the target; the VAE still loads during decoding.
+An unloaded worker does not automatically select/load a default model. audio.cpp
+loads per generation, and pinned vLLM starts its child during generation; switching
+reports that deferred loading. Worker allocator checks do not measure other
+processes or driver context memory. See [GPU switch API details](docs/api.md#choosing-a-gpu).
 
 Start the worker before selecting a card: its CUDA indices can differ from
 physical GPU indices. UUID matching keeps live statistics attached to the right

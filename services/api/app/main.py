@@ -7,6 +7,8 @@ later run on another machine against the same data directory.
 from __future__ import annotations
 
 import logging
+import asyncio
+import time
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -21,7 +23,8 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from app.api.v1.events import router as events_router  # noqa: E402
 from app.api.v1.router import api_router  # noqa: E402
-from app.core.deps import settings_provider, store_provider  # noqa: E402
+from app.core.deps import settings_provider, store_provider, system_info_provider, model_downloads_provider  # noqa: E402
+from yue2_studio_core.runtime_commands import RuntimeCommands  # noqa: E402
 from app.core.errors import register_error_handlers  # noqa: E402
 from app.core.logging import configure_logging  # noqa: E402
 
@@ -39,7 +42,41 @@ async def lifespan(app: FastAPI):
     )
     logger.info("data directory: %s", store.root)
     logger.info("inference backend: %s", settings.yue2_backend)
-    yield
+    try:
+        yield
+    finally:
+        try:
+            model_downloads_provider().shutdown()
+        except Exception:
+            logger.exception("download shutdown bookkeeping failed")
+        if settings.worker_shutdown_on_api_exit:
+            await shutdown_worker(settings, store)
+
+
+async def shutdown_worker(settings, store):
+    """Ask the configured worker to stop; CUDA cleanup remains in that process."""
+    try:
+        worker = next((w for w in system_info_provider().worker_state()["workers"]
+                       if w.get("worker_id") == settings.worker_id and w.get("state") not in {"stopped", "failed"}
+                       and (w.get("online") or w.get("process_alive") is True)), None)
+        if not worker:
+            return
+        if not worker.get("session_id") or not worker.get("runtime_capabilities", {}).get("shutdown_commands"):
+            logger.warning("worker cannot acknowledge shutdown; update it and stop it through its launcher")
+            return
+        commands = RuntimeCommands(store)
+        command = commands.request_shutdown(worker["worker_id"], worker["session_id"])
+        deadline = time.monotonic() + settings.worker_shutdown_timeout_seconds
+        while time.monotonic() < deadline:
+            result = commands.get(command.id)
+            if result.status in {"succeeded", "failed"}:
+                if result.error:
+                    logger.error("worker shutdown failed: %s", result.error)
+                return
+            await asyncio.sleep(0.1)
+        logger.warning("worker shutdown has not been acknowledged before the API timeout; inspect worker runtime state")
+    except Exception:
+        logger.exception("could not coordinate worker shutdown")
 
 
 def create_app() -> FastAPI:

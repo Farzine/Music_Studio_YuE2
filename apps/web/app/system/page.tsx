@@ -173,7 +173,7 @@ export default function SystemPage() {
                       data.worker.online ? "bg-[var(--color-accent)]" : "bg-[var(--color-ink-faint)]",
                     )}
                   />
-                  {worker?.online ? worker.state : "offline"}
+                  {worker?.state === "stopping" || worker?.state === "stopped" ? worker.state : worker?.online ? worker.state : "offline"}
                 </span>
               }
             />
@@ -187,6 +187,8 @@ export default function SystemPage() {
             <Row label="VAE placement" value={String(model.vae_device ?? "Not reported")} />
             {model.process_id != null && <Row label="Model process" value={String(model.process_id)} />}
             {worker?.current_command_id && <Row label="Runtime command" value={worker.current_command_id} />}
+            {worker?.shutdown && <Row label="Shutdown" value={worker.shutdown.status} />}
+            {worker?.shutdown?.errors.map((error, index) => <ErrorNotice key={`${error.stage}-${index}`} message={`${error.stage}: ${error.message}`} className="my-3" />)}
             {modelError?.error_message != null && <ErrorNotice message={String(modelError.error_message)} guidance={modelError.guidance != null ? String(modelError.guidance) : null} className="my-3" />}
             <Row label="Queue depth" value={data.queue.depth} />
             <Row label="GPU job limit" value={String(data.app.max_concurrent_gpu_jobs)} />

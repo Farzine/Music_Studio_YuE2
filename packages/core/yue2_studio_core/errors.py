@@ -13,6 +13,7 @@ class ErrorCode(str, Enum):
     MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
     MODEL_LOAD_FAILED = "MODEL_LOAD_FAILED"
     MODEL_UNLOAD_FAILED = "MODEL_UNLOAD_FAILED"
+    WORKER_SHUTDOWN_FAILED = "WORKER_SHUTDOWN_FAILED"
     CUDA_OOM = "CUDA_OOM"
     INVALID_CONFIG = "INVALID_CONFIG"
     INVALID_ABC = "INVALID_ABC"
@@ -34,6 +35,7 @@ class ErrorCode(str, Enum):
 # Guidance is shown verbatim in the UI next to the failure. Keep it actionable
 # and never suggest that the application silently retried with other settings.
 GUIDANCE: dict[ErrorCode, str] = {
+    ErrorCode.WORKER_SHUTDOWN_FAILED: "Inspect the worker heartbeat's shutdown.errors and model.lifecycle. Cleanup was attempted; successful GPU release must be established separately from bookkeeping errors.",
     ErrorCode.MODEL_UNLOAD_FAILED: "The worker could not confirm resource cleanup. Retry unload before loading another model; inspect worker logs if it fails again.",
     ErrorCode.MODEL_NOT_FOUND: (
         "The configured model directory does not exist. Check YUE2_MODEL_PATH "

@@ -172,6 +172,7 @@ def test_runtime_memory_guard_uses_shared_margin_and_handles_missing_gpu(runtime
                          get_device_properties=lambda index: SimpleNamespace(major=8, minor=6),
                          mem_get_info=lambda index: (2**30, 24 * 2**30)))
     monkeypatch.setitem(__import__("sys").modules, "torch", fake)
+    monkeypatch.setattr(manager, "_validate_device", ModelManager._validate_device)
     config = GenerationConfig()
     with pytest.raises(StudioError) as caught:
         ModelManager._check_runtime(manager, config, manager.key_for(config))
@@ -190,6 +191,7 @@ def test_pinned_native_factory_materializes_weights_and_reports_cpu_moves(runtim
     cpu = SimpleNamespace(type="cpu", index=None)
     parameter = SimpleNamespace(device=gpu)
     pipeline = SimpleNamespace(_model=None, _vae=None, weights={}, close=lambda: None)
+    pipeline.close = lambda: setattr(pipeline, "_model", None)
     calls = []
     def materialize():
         calls.append("weights")

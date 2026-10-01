@@ -368,3 +368,21 @@ class ModelDownloads:
                     self._write(job)
         except ConflictError:
             return  # another invocation owns this same job; never fail its transfer
+
+    def shutdown(self) -> None:
+        """Fail abandoned requests owned by this API; never mutate a live transfer."""
+        with file_lock(self.root / ".admission.lock"):
+            for path in self.root.glob("mdl_*.json"):
+                job = self._load(path.stem)
+                if job.get("pid") != os.getpid() or job.get("hostname") != socket.gethostname():
+                    continue
+                try:
+                    with file_lock(self.root / f".{path.stem}.run.lock", blocking=False):
+                        job = self._load(path.stem)
+                        if job["status"] in ACTIVE_DOWNLOAD_STATES:
+                            transition_download(job, "failed")
+                            job.update(error="API stopped before this download finished; Retry resumes private staging.", current_file=None)
+                            self._write(job)
+                except ConflictError:
+                    continue  # ASGI waits for ordinary BackgroundTasks; a live
+                    # thread after a forced timeout still owns its atomic staging.

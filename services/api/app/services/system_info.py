@@ -16,7 +16,8 @@ from pathlib import Path
 from yue2_studio_core.hardware import precision_capabilities, system_memory
 from yue2_studio_core.model_metadata import ModelMetadata, audiocpp_available, resolve_model_reference, resolve_vae_reference
 from yue2_studio_core.model_recommendations import assess_model, gpu_capacity, sort_recommendations
-from yue2_studio_core.errors import ValidationError
+from yue2_studio_core.errors import ConflictError, UnsupportedCapabilityError, ValidationError
+from yue2_studio_core.runtime_commands import RuntimeCommands
 from yue2_studio_core.queue import FilesystemJobQueue
 from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store
@@ -167,7 +168,8 @@ class SystemInfoService:
         """
         physical, driver, error = physical_probe if physical_probe is not None else _gpus()
         state = state if state is not None else self.worker_state()
-        worker = next((entry for entry in state["workers"] if entry.get("online")), None)
+        online = [entry for entry in state["workers"] if entry.get("online")]
+        worker = next((entry for entry in online if entry.get("worker_id") == self.settings.worker_id), next(iter(online), None))
         reported = (worker or {}).get("gpu", {}).get("devices")
         selected = self.store.device_index()
         worker_pids = {entry.get("pid") for entry in state["workers"] if entry.get("online") and entry.get("pid")}
@@ -247,11 +249,19 @@ class SystemInfoService:
                                              if other is not None and all(p.get("used_bytes") is not None for p in other) else None)
 
         active = (worker or {}).get("gpu", {}).get("active_index")
+        commands = [c for c in RuntimeCommands(self.store).list()
+                    if c.worker_id == self.settings.worker_id and c.operation == "select_device"]
+        latest = max(commands, key=lambda c: (c.created_at, c.id), default=None)
+        switch_command = latest.model_dump(mode="json") if latest else None
+        if switch_command is not None:
+            switch_command["worker_online"] = any(entry.get("online") and entry.get("worker_id") == latest.worker_id
+                                                   and entry.get("session_id") == latest.worker_session for entry in state["workers"])
         return {
             "devices": devices,
             "selected_index": selected,
             "active_index": active,
             "pending_restart": active is not None and active != selected,
+            "switch_command": switch_command,
             "worker_online": state["online"],
             "driver_version": driver,
             "error": error,
@@ -264,6 +274,26 @@ class SystemInfoService:
                 else "Worker offline: physical GPU indices are informational; start the worker to confirm selectable CUDA devices." if worker is None else gpu.get("error")
             ),
         }
+
+    def select_device(self, device_index: int) -> dict:
+        """Admission only: the serial worker owns placement and selection commit."""
+        with self.store.queue_lock():
+            RuntimeCommands(self.store).assert_accepting_locked(self.settings.worker_id)
+            state = self.worker_state()
+            available = self.devices(state=state)
+            indices = {d["index"] for d in available["devices"] if d.get("selectable")}
+            if device_index not in indices:
+                raise ValidationError(f"GPU {device_index} is unavailable to the worker. Start the worker and choose a reported CUDA index.", details={"available": sorted(indices)})
+            worker = next((w for w in state["workers"] if w.get("online") and w.get("worker_id") == self.settings.worker_id), None)
+            if not worker or not worker.get("session_id") or not worker.get("runtime_capabilities", {}).get("select_device_commands"):
+                raise ConflictError("Start an updated GPU worker before requesting a coordinated device switch.")
+            if worker.get("backend") != "native":
+                raise UnsupportedCapabilityError("GPU switching requires the native worker; remote Comfy workers manage their own devices.")
+            model = worker.get("model", {})
+            references = [ref for ref in (model.get("model"), model.get("vae")) if ref]
+            command = RuntimeCommands(self.store).enqueue_locked(worker_id=worker["worker_id"], worker_session=worker["session_id"],
+                              operation="select_device", device_index=device_index, protected_references=references)
+            return {**available, "switch_command": {**command.model_dump(mode="json"), "worker_online": True}}
 
     def model_recommendation(self, *, device_index: int | None = None, vae: str = "standard",
                              offload_ar: bool = False, compute_backend: str = "torch",

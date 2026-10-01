@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, Cpu, TriangleAlert } from "lucide-react";
+import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as React from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,8 @@ export function GpuSelector() {
 
   if (isLoading) return <Skeleton className="h-40 w-full" />;
   if (!data) return null;
+  const command = data.switch_command;
+  const switching = command?.status === "queued" || command?.status === "running";
 
   if (data.devices.length === 0) {
     return (
@@ -54,15 +57,19 @@ export function GpuSelector() {
     <div className="space-y-3">
       {data.error ? <WarningNotice>{data.error}</WarningNotice> : null}
       {data.note ? <WarningNotice>{data.note}</WarningNotice> : null}
-      {data.pending_restart ? (
-        <WarningNotice>
-          GPU {data.active_index} is finishing its current work. The model will be unloaded there and the next
-          generation will load on GPU {data.selected_index}.
-        </WarningNotice>
+      {command ? (
+        <div role="status" aria-live="polite" className="rounded-[var(--radius-md)] border border-[var(--color-line)] p-3 text-sm">
+          <p className="font-medium">{switching ? `Switching to GPU ${command.device_index}…` : command.status === "succeeded" ? `GPU ${command.device_index} selected` : "GPU switch failed"}</p>
+          <p className="mt-1 text-[var(--color-ink-muted)]">{command.progress?.message ?? (switching ? "Queued: waiting for active inference to finish before switching." : "Inspect the selected GPU and runtime state below.")}</p>
+          {switching && !command.worker_online ? <p className="mt-1">Worker offline. The switch has not been acknowledged; start the worker and inspect runtime state.</p> : null}
+        </div>
       ) : null}
+      {command?.error ? <ErrorNotice message={command.error.error_message} guidance={command.error.guidance} /> : null}
 
-      <div
-        role="radiogroup"
+      <RadioGroup.Root
+        value={String(data.selected_index)}
+        onValueChange={(value) => select.mutate(Number(value))}
+        disabled={select.isPending || switching}
         aria-label="GPU used for generation"
         className="grid gap-3 md:grid-cols-2"
       >
@@ -71,83 +78,80 @@ export function GpuSelector() {
           const active = device.index === data.active_index;
           const busy = device.other_process_count != null && device.other_process_count > 0;
           return (
-            <button
-              key={device.index}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              disabled={select.isPending || !device.selectable}
-              onClick={() => select.mutate(device.index)}
-              className={cn(
-                "flex flex-col gap-3 rounded-[var(--radius-md)] border p-4 text-left transition-[border-color,background-color]",
-                selected
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
-                  : "border-[var(--color-line)] hover:border-[var(--color-line-strong)] hover:bg-[var(--color-surface-2)]",
-                select.isPending && "opacity-70",
-              )}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <Cpu
-                    className={cn(
-                      "h-4 w-4 shrink-0",
-                      selected ? "text-[var(--color-accent)]" : "text-[var(--color-ink-faint)]",
-                    )}
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {device.selectable ? "CUDA GPU" : "Physical GPU"} {device.index} · {device.name ?? "Unknown"}
-                    </p>
-                    <p className="text-[11px] text-[var(--color-ink-faint)]">
-                      compute {device.compute_capability ?? "unknown"}
-                      {device.bf16_supported === false ? " · no bf16" : ""}
-                    </p>
-                  </div>
-                </div>
-                {selected ? (
-                  <Badge tone="accent">
-                    <Check className="h-3 w-3" />
-                    {active ? "in use" : "selected"}
-                  </Badge>
-                ) : null}
-              </div>
-
-              <Meter device={device} />
-              {device.error ? <span className="text-xs text-[var(--color-danger)]">{device.error}</span> : null}
-              <dl className="space-y-1 break-all text-xs text-[var(--color-ink-muted)]">
-                <div><dt className="inline">CUDA: </dt><dd className="inline">{device.cuda_available == null ? "unconfirmed" : device.cuda_available ? "available" : "unavailable"} · runtime {device.cuda_runtime ?? "unknown"}</dd></div>
-                <div><dt className="inline">Driver: </dt><dd className="inline">{device.driver_version ?? "unknown"}</dd></div>
-                <div><dt className="inline">Identity: </dt><dd className="inline">{device.uuid ?? "unknown"}{device.physical_index != null ? ` · physical GPU ${device.physical_index}` : ""}</dd></div>
-                <div><dt className="inline">Loaded model: </dt><dd className="inline">{device.loaded_model ?? (data.worker_online ? "none reported" : "unknown (worker offline)")}</dd></div>
-                <div><dt className="inline">Worker allocator: </dt><dd className="inline">{formatBytes(device.allocated_bytes)} allocated · {formatBytes(device.reserved_bytes)} reserved</dd></div>
-                <div><dt className="inline">Facts: </dt><dd className="inline">{device.memory_source === "nvml" ? "live NVML memory" : "worker heartbeat memory"}; precision from {device.precision_source.replaceAll("_", " ")}. Eligibility is not an inference test.</dd></div>
-              </dl>
-
-              <div className="flex flex-wrap items-center gap-1.5">
-                {device.utilisation_percent != null ? (
-                  <Badge tone="outline">{device.utilisation_percent}% busy</Badge>
-                ) : null}
-                {device.temperature_c != null ? <Badge tone="outline">{device.temperature_c}°C</Badge> : null}
-                {busy ? (
-                  <Badge tone="warn">
-                    <TriangleAlert className="h-3 w-3" />
-                    {device.other_process_count} other process{(device.other_process_count ?? 0) > 1 ? "es" : ""} ·{" "}
-                    {formatBytes(device.other_process_bytes)}
-                  </Badge>
-                ) : (
-                  <Badge tone="outline">{device.other_process_count == null ? "process usage unknown" : "no other compute processes"}</Badge>
+            <RadioGroup.Item key={device.index} value={String(device.index)} disabled={!device.selectable} asChild>
+              <button
+                type="button"
+                className={cn(
+                  "flex flex-col gap-3 rounded-[var(--radius-md)] border p-4 text-left transition-[border-color,background-color] focus-visible:outline-2 focus-visible:outline-[var(--color-accent)] disabled:opacity-70",
+                  selected
+                    ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
+                    : "border-[var(--color-line)] hover:border-[var(--color-line-strong)] hover:bg-[var(--color-surface-2)]",
+                  select.isPending && "opacity-70",
                 )}
-                {(["fp16", "bf16", "fp8"] as const).map((precision) => (
-                  <Badge key={precision} tone="outline">{precision.toUpperCase()} {device[`${precision}_supported`] == null ? "unknown" : device[`${precision}_supported`] ? "eligible" : "unsupported"}</Badge>
-                ))}
-              </div>
-            </button>
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Cpu
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        selected ? "text-[var(--color-accent)]" : "text-[var(--color-ink-faint)]",
+                      )}
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {device.selectable ? "CUDA GPU" : "Physical GPU"} {device.index} · {device.name ?? "Unknown"}
+                      </p>
+                      <p className="text-[11px] text-[var(--color-ink-faint)]">
+                        compute {device.compute_capability ?? "unknown"}
+                        {device.bf16_supported === false ? " · no bf16" : ""}
+                      </p>
+                    </div>
+                  </div>
+                  {selected ? (
+                    <Badge tone="accent">
+                      <Check className="h-3 w-3" />
+                      {active ? "in use" : "selected"}
+                    </Badge>
+                  ) : null}
+                </div>
+
+                <Meter device={device} />
+                {device.error ? <span className="text-xs text-[var(--color-danger)]">{device.error}</span> : null}
+                <dl className="space-y-1 break-all text-xs text-[var(--color-ink-muted)]">
+                  <div><dt className="inline">CUDA: </dt><dd className="inline">{device.cuda_available == null ? "unconfirmed" : device.cuda_available ? "available" : "unavailable"} · runtime {device.cuda_runtime ?? "unknown"}</dd></div>
+                  <div><dt className="inline">Driver: </dt><dd className="inline">{device.driver_version ?? "unknown"}</dd></div>
+                  <div><dt className="inline">Identity: </dt><dd className="inline">{device.uuid ?? "unknown"}{device.physical_index != null ? ` · physical GPU ${device.physical_index}` : ""}</dd></div>
+                  <div><dt className="inline">Loaded model: </dt><dd className="inline">{device.loaded_model ?? (data.worker_online ? "none reported" : "unknown (worker offline)")}</dd></div>
+                  <div><dt className="inline">Worker allocator: </dt><dd className="inline">{formatBytes(device.allocated_bytes)} allocated · {formatBytes(device.reserved_bytes)} reserved</dd></div>
+                  <div><dt className="inline">Facts: </dt><dd className="inline">{device.memory_source === "nvml" ? "live NVML memory" : "worker heartbeat memory"}; precision from {device.precision_source.replaceAll("_", " ")}. Eligibility is not an inference test.</dd></div>
+                </dl>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {device.utilisation_percent != null ? (
+                    <Badge tone="outline">{device.utilisation_percent}% busy</Badge>
+                  ) : null}
+                  {device.temperature_c != null ? <Badge tone="outline">{device.temperature_c}°C</Badge> : null}
+                  {busy ? (
+                    <Badge tone="warn">
+                      <TriangleAlert className="h-3 w-3" />
+                      {device.other_process_count} other process{(device.other_process_count ?? 0) > 1 ? "es" : ""} ·{" "}
+                      {formatBytes(device.other_process_bytes)}
+                    </Badge>
+                  ) : (
+                    <Badge tone="outline">{device.other_process_count == null ? "process usage unknown" : "no other compute processes"}</Badge>
+                  )}
+                  {(["fp16", "bf16", "fp8"] as const).map((precision) => (
+                    <Badge key={precision} tone="outline">{precision.toUpperCase()} {device[`${precision}_supported`] == null ? "unknown" : device[`${precision}_supported`] ? "eligible" : "unsupported"}</Badge>
+                  ))}
+                </div>
+              </button>
+            </RadioGroup.Item>
           );
         })}
-      </div>
+      </RadioGroup.Root>
 
       {select.isError ? (
-        <ErrorNotice message="The GPU could not be changed. The worker may have gone offline." />
+        <ErrorNotice message={select.error.message} />
       ) : null}
     </div>
   );

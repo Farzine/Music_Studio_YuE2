@@ -50,6 +50,7 @@ def runtime_manager(tmp_path, data_dir, native_model_files, monkeypatch):
     manager = ModelManager(settings, Store(settings))
     monkeypatch.setattr(manager, "_check_runtime", lambda config, key: None)
     monkeypatch.setattr(manager, "_clear_cuda", lambda index: None)
+    monkeypatch.setattr(manager, "_validate_device", lambda index: None)
 
     def load(config, key):
         manager._pipeline = SimpleNamespace(close=lambda: None, weights={"model": "fixture"})
@@ -63,6 +64,9 @@ def runtime_manager(tmp_path, data_dir, native_model_files, monkeypatch):
     # Test failures may deliberately leave a close error; OS resources and
     # leases must still be released without touching an actual CUDA device.
     if manager._pipeline is not None:
+        for name in ("_model", "_vae", "_vllm_worker"):
+            if hasattr(manager._pipeline, name):
+                setattr(manager._pipeline, name, None)
         manager._pipeline.close = lambda: None
     manager._clear_cuda = lambda index: None
     manager.release()
@@ -96,6 +100,8 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("DATA_DIR", str(directory))
     monkeypatch.setenv("YUE2_BACKEND", "mock")
     monkeypatch.setenv("MAX_CONCURRENT_GPU_JOBS", "1")
+    # Heartbeat-only mock workers cannot acknowledge an API lifespan request.
+    monkeypatch.setenv("WORKER_SHUTDOWN_TIMEOUT_SECONDS", "0")
     from yue2_studio_core.settings import get_settings
 
     get_settings.cache_clear()
