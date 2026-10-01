@@ -25,6 +25,40 @@ GGUF_COMPANIONS = (
     "sidecars/yue2-vae-config.json",
 )
 
+NATIVE_COMPANIONS = (
+    "config.json", "generation_config.json", "yue2_generation_config.json",
+    "weights_manifest.json", "qwen.tiktoken", "modeling_yue2.py",
+)
+
+
+def model_required_files(filename: str) -> tuple[str, ...]:
+    """Files the current adapters need; presence never proves tensor validity."""
+    return (filename, *GGUF_COMPANIONS) if filename.lower().endswith(".gguf") else (filename, "config.json")
+
+
+def model_layout_error(filename: str) -> str | None:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".gguf", ".safetensors"} or (suffix == ".safetensors" and filename != "model.safetensors"):
+        return "The current native adapter requires model.safetensors in the installation root; this file/layout is not supported."
+    return None
+
+
+def model_config_compatibility(filename: str, role: str, config: dict, vae_config: dict) -> tuple[str, str | None]:
+    if problem := model_layout_error(filename):
+        return "incompatible", problem
+    suffix = Path(filename).suffix.lower()
+    expected = "yue2" if role == "model" else "yue2_vae"
+    architecture = config.get("model_type")
+    if architecture != expected:
+        return ("incompatible" if architecture else "unknown",
+                f"Expected {expected} architecture; configuration declares {architecture or 'Unknown'}.")
+    if suffix == ".gguf" and vae_config.get("model_type") != "yue2_vae":
+        return ("incompatible" if vae_config.get("model_type") else "unknown",
+                "The bundled VAE configuration does not declare yue2_vae architecture; inspect/validate the VAE metadata.")
+    if suffix == ".safetensors" and config.get("quantization_config"):
+        return "incompatible", "The native adapter does not load pre-quantized safetensors checkpoints."
+    return "supported", None
+
 MAX_METADATA_BYTES = 100_000_000
 
 
@@ -122,6 +156,10 @@ def vae_compatibility_error(model_reference: str, vae_reference: str) -> str | N
     """Compare declared native latent widths; unknown widths are not invented."""
     model = read_json_object(Path(model_reference) / "config.json")
     vae = read_json_object(Path(vae_reference) / "config.json")
+    return vae_config_compatibility_error(model, vae)
+
+
+def vae_config_compatibility_error(model: dict, vae: dict) -> str | None:
     model_dim = model.get("latent_dim")
     decoder = vae.get("decoder_config")
     vae_dim = decoder.get("latent_dim") if isinstance(decoder, dict) else vae.get("latent_dim")
@@ -181,7 +219,7 @@ def describe_model_files(reference: str, role: Literal["model", "vae"], *, is_de
     problem = None
     compatibility = "supported"
     if gguf:
-        missing = [name for name in GGUF_COMPANIONS if not (path / name).is_file()]
+        missing = [name for name in model_required_files(filename)[1:] if not (path / name).is_file()]
         complete = downloaded and not missing
         if not downloaded:
             problem = f"The selected file {filename} is missing."
@@ -197,24 +235,19 @@ def describe_model_files(reference: str, role: Literal["model", "vae"], *, is_de
             problem = f"The directory has no {filename}."
 
     status = "ready" if complete else "files_missing"
-    if suffix not in {".gguf", ".safetensors"} or (not gguf and filename != "model.safetensors"):
+    if layout_problem := model_layout_error(filename):
         compatibility = "incompatible"
-        problem = "The current native adapter requires model.safetensors in the installation root; this file/layout is not supported."
+        problem = layout_problem
     architecture, precision = None, None
     config_path = path / ("sidecars/yue2-model-config.json" if gguf else "config.json")
     if config_path.is_file():
         try:
             config = read_json_object(config_path)
             architecture = config.get("model_type") if isinstance(config.get("model_type"), str) else None
-            expected = "yue2" if role == "model" else "yue2_vae"
-            if architecture != expected:
-                compatibility = "incompatible" if architecture else "unknown"
-                problem = f"Expected {expected} architecture; config.json declares {architecture or 'Unknown'}."
-            if gguf and (path / "sidecars/yue2-vae-config.json").is_file():
-                vae_config = read_json_object(path / "sidecars/yue2-vae-config.json")
-                if vae_config.get("model_type") != "yue2_vae":
-                    compatibility = "incompatible"
-                    problem = "The bundled VAE configuration does not declare yue2_vae architecture."
+            vae_config = (read_json_object(path / "sidecars/yue2-vae-config.json")
+                          if gguf and (path / "sidecars/yue2-vae-config.json").is_file() else {})
+            compatibility, config_problem = model_config_compatibility(filename, role, config, vae_config)
+            problem = problem or config_problem
         except (OSError, ValueError, RecursionError) as exc:
             return ModelMetadata(**base, format="gguf" if gguf else "safetensors", filename=filename, files_complete=complete,
                                  download_status="downloaded" if downloaded else "missing", validation_status="failed",

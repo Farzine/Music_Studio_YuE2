@@ -1,42 +1,22 @@
 """Persistent Hugging Face download jobs, registering completed installations."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
 import shutil
 import threading
-from pathlib import Path, PurePosixPath
 
 from huggingface_hub import HfApi, hf_hub_download
-from huggingface_hub.utils import HFValidationError, validate_repo_id
 from yue2_studio_core.errors import ValidationError
 from yue2_studio_core.ids import new_id
-from yue2_studio_core.model_metadata import GGUF_COMPANIONS as _GGUF_COMPANIONS
+from app.services.huggingface import HuggingFaceService, default_download_files, installation_path, validate_source
 from yue2_studio_core.model_registry import ModelRegistry
 from yue2_studio_core.model_files import model_file_leases
 from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store, write_json_atomic
 
 _LOCK = threading.Lock()
-_NATIVE_COMPANIONS = (
-    "config.json", "generation_config.json", "yue2_generation_config.json",
-    "weights_manifest.json", "qwen.tiktoken", "modeling_yue2.py",
-)
-
-
-def _validate(repo_id: str, filename: str | None, revision: str | None) -> None:
-    try:
-        validate_repo_id(repo_id)
-    except HFValidationError as exc:
-        raise ValidationError(f"Invalid Hugging Face repository ID: {exc}") from exc
-    if filename:
-        path = PurePosixPath(filename)
-        if path.is_absolute() or any(part in {"", ".", ".."} for part in filename.split("/")):
-            raise ValidationError("Choose a file inside the model repository.")
-    if revision and (not re.fullmatch(r"[A-Za-z0-9._/-]{1,200}", revision) or ".." in revision):
-        raise ValidationError("Invalid branch, tag or revision.")
 
 
 class ModelDownloads:
@@ -44,24 +24,18 @@ class ModelDownloads:
         self.settings = settings
         self.store = store
         self.registry = ModelRegistry(settings, store)
+        self.hub = HuggingFaceService(settings)
         self.root = store.root / "model-downloads"
         self.root.mkdir(parents=True, exist_ok=True)
 
     def browse(self, repo_id: str, revision: str | None = None) -> dict:
-        _validate(repo_id, None, revision)
-        try:
-            info = HfApi().model_info(repo_id, revision=revision, files_metadata=True)
-        except Exception as exc:
-            raise ValidationError(f"Could not inspect {repo_id}: {exc}") from exc
-        files = sorted(
-            ({"name": item.rfilename, "bytes": item.size} for item in info.siblings or []
-             if item.rfilename.endswith((".gguf", ".safetensors"))),
-            key=lambda item: item["name"],
-        )
-        return {"repo_id": repo_id, "revision": info.sha, "files": files}
+        result = self.hub.inspect(repo_id, revision)
+        return {"repo_id": repo_id, "revision": result["revision"],
+                "files": [{"name": f["name"], "bytes": f["bytes"]} for f in result["files"]
+                          if f["extension"] in {".gguf", ".safetensors"}]}
 
     def start(self, repo_id: str, filename: str, revision: str | None) -> dict:
-        _validate(repo_id, filename, revision)
+        validate_source(repo_id, filename, revision)
         if not filename.endswith((".gguf", ".safetensors")):
             raise ValidationError("Choose a GGUF or safetensors model file.")
         with _LOCK:
@@ -101,14 +75,8 @@ class ModelDownloads:
             names = {item.rfilename for item in info.siblings or []}
             if filename not in names:
                 raise ValueError(f"{filename} is not in {repo_id}@{revision}.")
-            companions = _GGUF_COMPANIONS if filename.endswith(".gguf") else _NATIVE_COMPANIONS
-            files = [filename, *(name for name in companions if name in names and name != filename)]
-            if filename.endswith(".gguf") and not all(name in names for name in _GGUF_COMPANIONS):
-                # Other GGUF repositories can still be downloaded, but cannot
-                # claim inference support without the YuE2 package files.
-                files = [filename]
-            digest = hashlib.sha256(f"{repo_id}@{info.sha}/{filename}".encode()).hexdigest()[:12]
-            destination = self.settings.models_path / "hub" / f"{repo_id.replace('/', '--')}--{digest}"
+            files = default_download_files(filename, names)
+            destination = installation_path(self.settings, repo_id, info.sha, filename)
             self.settings.models_path.mkdir(parents=True, exist_ok=True)
             if shutil.disk_usage(self.settings.models_path).free < sum(
                 int(item.size or 0) for item in info.siblings or [] if item.rfilename in files

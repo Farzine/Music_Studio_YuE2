@@ -113,3 +113,38 @@ def sample_config() -> dict:
         },
         "sampling": {"max_duration_seconds": 20.0, "seed": 4242},
     }
+
+
+@pytest.fixture()
+def hub_repository(monkeypatch):
+    """Hub responses without network, model downloads or a GPU."""
+    from types import SimpleNamespace
+    from yue2_studio_core.model_metadata import GGUF_COMPANIONS
+    from app.services.huggingface import HuggingFaceService
+
+    configs = {
+        "config.json": {"model_type": "yue2", "num_parameters": 1234},
+        "sidecars/yue2-model-config.json": {
+            "model_type": "yue2", "num_hidden_layers": 2, "num_key_value_heads": 2,
+            "head_dim": 4, "max_position_embeddings": 128,
+        },
+        "sidecars/yue2-vae-config.json": {"model_type": "yue2_vae"},
+    }
+    names = ["custom-3b-q4_0.gguf", "model.safetensors", "README.md", *GGUF_COMPANIONS]
+    info = SimpleNamespace(sha="a" * 40, siblings=[SimpleNamespace(rfilename=n, size=128, lfs=None) for n in names],
+                           card_data={"description": "Fixture model", "license": "apache-2.0"})
+    info.siblings.append(SimpleNamespace(rfilename="config.json", size=128, lfs=None))
+    calls = []
+
+    def model_info(repo_id, **kwargs):
+        calls.append((repo_id, kwargs))
+        return info
+
+    api = SimpleNamespace(model_info=model_info,
+                          list_repo_refs=lambda repo: SimpleNamespace(
+                              branches=[SimpleNamespace(name="main", target_commit="a" * 40)],
+                              tags=[SimpleNamespace(name="v1", target_commit="b" * 40)]),
+                          list_models=lambda **kwargs: [SimpleNamespace(id="owner/repository")])
+    monkeypatch.setattr("app.services.huggingface.HfApi", lambda: api)
+    monkeypatch.setattr(HuggingFaceService, "_json", lambda self, repo, commit, name, files: configs.get(name, {}) if name in files else {})
+    return SimpleNamespace(info=info, configs=configs, api=api, calls=calls)

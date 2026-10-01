@@ -1,21 +1,105 @@
 # YuE2 Music Studio — implementation context
 
-Updated: 2026-09-30. Analysis baseline: `2af5461` (`feat: Implement model downloads feature with Hugging Face integration`).
+Updated: 2026-10-01. Analysis baseline: `2af5461` (`feat: Implement model downloads feature with Hugging Face integration`).
 
 ## Current task and handoff
 
-**Phases 1, 2A–2C and 3A are complete.** Shared installation metadata and registry import existing models without moving weights. Inspect/structural-validation/checksum/confirmed-deletion APIs now protect tasks, resident files and shared storage, while preserving legacy paths and default/VAE choices. Phase 3B and Phases 4–9 remain pending; the full enhancement definition of done has not been achieved.
+**Phases 1, 2A–2C, 3A–3B and 4A are complete.** Shared installation metadata and registry import existing models without moving weights. Inspect/structural-validation/checksum/confirmed-deletion APIs now protect tasks, resident files and shared storage, while preserving legacy paths and default/VAE choices. Phase 4B and Phases 5–9 remain pending; the full enhancement definition of done has not been achieved.
 
 On `Continue from CONTEXT.md`:
 
 1. Check the current diff and preserve any subsequent user changes. Reuse this map; read the files for the next slice and their callers before editing.
-2. Start Phase 3B: capacity and recommendations. Read existing system_info benchmark projection, shared descriptors/config metadata, budget/KV helpers, settings and UI consumers. Implement explainable estimates with configurable reserves, backend/VAE/offload compatibility and honest unknown states; preserve the existing recommendation endpoint contract where practical.
+2. Start Phase 4B: atomic downloads and measured progress. Read ModelDownloads, its callers/persisted job contract, the Phase 4A HuggingFaceService and preview selections, pinned SDK transfer instrumentation, registry admission/validation and file leases. Preserve existing single-file requests/polling and legacy destination identities. Add selected/repository transfers with staging, real bytes/rate/ETA, verification/registration and interruption cleanup/retry; never expose partial installs as ready.
 3. Complete one slice, run its relevant checks, and update this document with files changed, results, and remaining work before starting the next slice.
 4. Keep the API free of PyTorch/CUDA model loading. Runtime operations belong to the worker and its existing manager/adapters.
 
-No user decision currently blocks Phase 3B. Current implementation and validation limits follow; earlier phase findings are historical snapshots where explicitly marked.
+No user decision currently blocks Phase 4B. Current implementation and validation limits follow; earlier phase findings are historical snapshots where explicitly marked.
+
+## Phase 4A implementation
+
+- Read the complete downloader and its routes/Settings caller, shared metadata/readiness/estimation, SDK 0.36.2 signatures/objects and related tests before editing. Reused existing HfApi, polling, Settings models directory, shared descriptors, atomic JSON job persistence, package layout and registry seams. No new dependency or inference import in the API/core.
+- Added focused `services/api/app/services/huggingface.py`: validated repository/revision/file inputs; immutable commits; repository/card metadata, branches/tags, all files/nullable sizes/LFS SHA256; bounded streamed configuration JSON; adapter candidates; deterministic quantized-lineage discovery with per-repository errors. Tokens/raw upstream exception URLs are not echoed to clients.
+- Missing/invalid metadata remains Unknown; only explicit positive integer parameter counts are accepted. Filename quantization/precision hints are labelled unverified and kept separate from actual facts. Remote Python is never executed and no model weights are read during inspection. Repository description/license can be null when structured card data omits them.
+- Shared `model_metadata.py` now owns native companions, required files, layout/configuration checks and declared VAE latent-width comparison. Local inventory and remote inspection reuse these rules. Missing-file messages retain priority; empty/unreadable bundled VAE metadata cannot become a positive compatibility claim. This exposes unsupported pre-quantized native safetensors explicitly rather than claiming the current loader supports them.
+- Added internal remote-config/bundled-VAE inputs to existing memory/assessment and SystemInfoService. Actual remote context dimensions and VAE bytes refine the same estimates; no second recommendation engine. Native candidate/selected installed VAE latent widths are compared. Candidate IDs cannot become runnable, loaded or task-selected through an estimate.
+- Added `POST /models/hub/inspect`, `POST /models/hub/preview`, `GET /models/hub/discover` above dynamic ID routes; all have `/api/v1` prefix. API composes candidate assessments with existing installed decoder/runtime inventory, returns selected/all-GPU explanations, and strips internal configuration contexts. Existing `/models/hub` response and download request/job/polling contracts are retained.
+- Single/selected/repository preview modes validate every path/file, deduplicate selection, preserve primary identity and commit, list missing sidecars, distinguish known byte totals/lower bounds and inspect the nearest existing MODELS_DIR parent filesystem. No preview installation/registry write. Known totals + 1 GiB exceeding free space prohibit download; unknown sizes remain explicit. File-as-directory storage configuration fails with a useful error.
+- Reused a shared destination/default-related-files helper in the existing transfer runner, keeping its exact hash/directory identity and legacy package behavior. Actual selected/repository transfers, checksum admission, atomic staging and measured byte/rate/ETA progress are 4B.
+- Extended existing Settings download panel: inspect, revision suggestions, select primary model, preview content/storage/metadata/GPU reasons and start at the pinned commit. Source/file changes invalidate previews; busy controls prevent stale response selection; identified VAE artifacts are excluded from the primary model browser. Quantized repository discovery is read-only and never downloads automatically. Full dedicated pages and browser coverage remain Phase 6/7.
+
+### Phase 4A changed files
+
+```text
+services/api/app/services/huggingface.py (new)
+services/api/app/services/{model_downloads,system_info}.py
+services/api/app/api/v1/models.py
+packages/core/yue2_studio_core/{model_metadata,model_recommendations}.py
+apps/web/components/settings/model-downloads.tsx
+apps/web/{lib/api.ts,types/api.ts}
+tests/conftest.py
+tests/unit/test_huggingface.py (new)
+tests/unit/test_model_recommendations.py
+tests/integration/test_huggingface_api.py (new)
+docs/huggingface-models.md (new)
+README.md; docs/{api,model-recommendations}.md; CONTEXT.md
+```
+
+### Phase 4A validation and remaining limits
+
+- Full unit suite: **225 passed, 2 skipped, 1 unchanged failure** (`tests/unit/test_parameter_mapping.py` expects absent root `yue2_full.json`). Focused final HF/download/readiness/recommendation/structural-validation checks: **108 passed**. Covers unsafe paths, revisions, exact/unknown metadata, hints, pinned/bounded JSON streams, disk volumes/unknown sizes/insufficient storage, selection modes, missing sidecars, partial discovery errors and remote/native VAE mismatch.
+- Full integration suite: **93 passed**, one unchanged Starlette/AnyIO deprecation warning; affected HF/readiness/recommendation recheck: **10 passed** after metadata/storage tightening. Tests ran outside sandbox due to documented TestClient stall, using fixtures and temporary files. Worker model manager: **9 passed**.
+- ESLint, production Next build, final TypeScript and diff whitespace checks: **passed**. An initial concurrently launched typecheck raced Next's generated `.next/types` removal; reran typecheck sequentially after the successful build and it passed. Run build/typecheck sequentially in future.
+- Live **metadata-only** smoke outside network sandbox: example repository resolved `eb14a51700bf8baac825a690b2f3b24a01239f85`, 34 files, main ref, four main GGUF variants and two decoder files, no inspection warnings. Quantized-lineage discovery (limit 3) inspected `ahmadw/YuE2-3B-MLX`, `audio-cpp/Yue2-3B-GGUF`, `scragnog/YuE2-GGUF`, no repository errors. These are dated changing observations, not a shipped static list or compatibility guarantee. No model weights downloaded, GPU load, device switch, worker restart, deletion or production registry migration performed.
+- Candidate compatibility is declared configuration/layout evidence; actual tensor architecture/quantization/content requires post-download validation. Unsupported model families/MLX/native shard layouts acquire no runtime here. Standalone GGUF VAE selection is not promised; the existing audio.cpp adapter still uses its bundled F16 decoder.
+- Discovery is bounded/sequential (1–20 repos). SDK metadata/ref/catalog behavior is retained; optional metadata failures expose warnings. No custom cache, parallel crawler or background architecture added. Preview free space is a point-in-time check; transfer must recheck. Unknown totals cannot guarantee capacity. All-repository mode can include large alternate weights/examples and must retain a clear preview.
+- Current downloads still have legacy file-count progress and non-atomic whole-package installation; 4A adds previews only for selected/repository content. Existing file leases protect active tasks from writes, but staging/atomic admission, byte progress, verification/recovery/retry remain **Phase 4B**. No frontend/browser test runner is configured yet.
+- Worker lifecycle/GPU switching/shutdown (5), dedicated model pages/actions/task selectors/file browser and broader UX (6), frontend/coverage consolidation (7), remaining docs and final validation (8–9) remain pending. Full enhancement definition of done is not complete.
+- Next: **Phase 4B**. No user input currently needed.
+
+## Phase 3B implementation
+
+Historical snapshot; HF candidate inspection/discovery subsequently completed in 4A.
+
+- Added shared core `model_recommendations.py`: per-GPU capacity envelopes, model/VAE/cache/runtime estimates, deterministic explainable capability states and sorting. No tensor loading, new dependencies, frontend business rules or extra model registry.
+- Removed the fixed three-file benchmark list from SystemInfoService. Existing `/system/model-recommendation` now assesses actual inventory models on every worker GPU; `items` selects the requested/current GPU and `by_gpu` covers every GPU. Legacy `variants` projects those assessments, `recommended` remains nullable, `max_model_bytes` becomes comfortable heuristic capacity and `max_parameters` is null rather than a fabricated universal count.
+- Capacity reserves the greater of a configurable total-VRAM fraction and fixed GiB margin, plus configured VAE/cache/runtime workspace. Conservative, comfortable and upper file-size envelopes and hypothetical Q4/Q5/Q8/BF16 parameter capacities are labelled heuristic. Installed parameter counts remain nullable metadata facts.
+- Estimates expand weights (default factor 1.25), include native FP32 VAE/bundled GGUF VAE sizes, runtime workspace and BF16 KV cache. Extracted `budget.kv_cache_bytes_per_token` reuses the existing formula; model config supplies full context/two CFG branches when available, otherwise a configured cache reserve. Conservative peak adds weight headroom. Native BF16 parameter metadata supplies a lower bound, never a filename-derived count.
+- Idle cached manager-owned PyTorch reserved memory is conditionally reclaimable after unload/cache release, capped at physically used memory. Busy job allocations, other process memory, CUDA contexts and audio.cpp subprocesses are not counted as reclaimable. A currently reported model in active inference remains unknown for incremental headroom instead of being falsely marked unable to run from duplicate load costs.
+- Native allocator cap is scenario budget minus the installed runtime's 2 GiB reserve. Shared prerequisites, structural validation, declared model/VAE latent-width matching, BF16 eligibility, CLI/native runtime availability, GPU utilization and host loading/offload RAM influence status. AR offload does not discount full-load requirements; vLLM placement/cache remains unknown instead of borrowing a torch guarantee. Unsupported/missing/corrupt/deleting states remain blocked.
+- Query options on the existing recommendation endpoint: device_index, vae, offload_ar, compute_backend and budget_gib. Explicit missing devices/invalid scenarios return 422; metadata ranges and finite coefficient/query constraints prevent unsafe arithmetic. Candidate descriptors use the same core engine but uninstalled candidates are never runnable; HF discovery is not implemented yet.
+- Replaced the old GPU-0/coefficient task VRAM warning with a projection of the same model estimate. Create now passes its actual model/VAE/offload/compute selection. Full waveform decoding explicitly needs unprofiled extra memory; warning estimates do not alter task settings or admission.
+- System page now shows per-GPU capacity, hypothetical parameters, installed recommendations/status/reasons and expandable memory components. Actual model parameter counts display Unknown unless supplied. GPU selection refreshes schema/capability caches as well as hardware/recommendations. Task model/VAE/GPU dedicated controls and model action UI remain Phase 6.
+- Added six validated estimate settings to Settings/.env.example, API/TS contracts, README/API documentation and `docs/model-recommendations.md` with coefficients, statuses, troubleshooting and backend extension guidance.
+
+### Phase 3B changed files
+
+```text
+packages/core/yue2_studio_core/model_recommendations.py (new)
+packages/core/yue2_studio_core/{budget,settings}.py
+services/api/app/services/system_info.py
+services/api/app/api/v1/system.py
+apps/web/{app/system/page.tsx,features/create/create-form.tsx,hooks/use-queries.ts,lib/api.ts,types/api.ts}
+tests/unit/test_model_recommendations.py (new)
+tests/unit/{test_hardware,test_model_downloads}.py
+tests/integration/test_recommendations_api.py (new)
+.env.example; README.md; docs/api.md; docs/model-recommendations.md (new); CONTEXT.md
+```
+
+### Phase 3B validation and remaining limits
+
+- Full API integration suite: **91 passed**, unchanged Starlette/AnyIO deprecation warning. Final recommendation/hardware API recheck after metadata/query guards: **7 passed**. TestClient requires execution outside sandbox; temporary files and mocked hardware/inference only.
+- Final full unit suite: **196 passed, 2 skipped, 1 unchanged failure** (`tests/unit/test_parameter_mapping.py::test_workflow_mapping_matches_the_reference_workflow`, missing root `yue2_full.json`). Do not fabricate that reference file. Focused recommendation/hardware/download/token-budget check: **76 passed**; worker model-manager environment: **9 passed**.
+- TypeScript, ESLint, Next production build and diff whitespace checks: **passed**. No real GPU load/inference, real HF download, production registry migration/deletion, new dependencies or worker restart performed. No browser test runner is configured yet; interactive/keyboard coverage remains Phase 7.
+- The daemon restart interrupted finishing docs/context, not implementation. Recovered edits were checked before resuming; final checks above completed and the phase is ready for handoff. No commits were made.
+- These are estimates, not measured peaks. Full-context/two-CFG/tiled-decoding assumptions and conservative summed model/VAE costs can overestimate actual native stage peaks; missing cache/VAE costs can be inaccurate. Coefficients and reserves are visible/configurable. No performance/quality ranking from file sizes or invented parameter counts.
+- Host RAM is not container limits or remote worker RAM. Native loading/offload RAM factor is heuristic; vLLM, full waveform decode, and alternative backends need measured profiles. Current native manager reports cached pipeline identity rather than complete tensor-level GPU residency; Ready/currently_loaded follows that worker report, not a new physical-residency proof. Precise residency (including GGUF CLI), lifecycle and switch/unload verification remain Phase 5.
+- Capacity's quantization rows are hypothetical storage envelopes, not blanket quantization/backend support. Shared validation/preflight still governs actual known variants; native shards/additional GGUF block encodings remain limited as documented in 2C. Validation does not verify numerical tensor values or full semantic layer coverage.
+- HF candidate inspection/discovery (4A), atomic/measured downloads (4B), worker lifecycle/GPU switch/shutdown (5), dedicated model actions/task selectors/file browser and broad UX (6), browser/coverage/docs/overall validation (7–9) remain pending. The full enhancement definition of done is not complete.
+- Next: Phase 4A. No information is currently required from the user.
 
 ## Phase 3A implementation
+
+Historical snapshot; general estimates and model recommendation UI were subsequently added in 3B.
 
 - Added shared core `hardware.py` for host CPU/RAM facts and native arithmetic eligibility. Linux MemAvailable includes reclaimable cache; total-RAM fallback uses stdlib sysconf and leaves available/used RAM unknown. No new dependencies or torch import in the API/core.
 - NVML scan now returns UUID/PCI identity, per-device driver, nullable memory/precision/utilization/process facts. Unsupported sensors or unavailable device handles preserve other devices/facts. Unknown process memory is not fabricated as zero.
@@ -394,8 +478,8 @@ Each slice includes focused tests and a CONTEXT update. Phases 7–9 consolidate
 | **2B — Registry and migration (done)** | Shared filesystem registry/facts using Store; inventory delegates to it. Import configured paths and `studio-model.json`, recording nullable metadata/provenance. | Multiple native/GGUF variants and VAE entries have stable identity and preserved path aliases; re-import is idempotent; no weight movement/redownload; exact parameter counts are not guessed. |
 | **2C — Validation and deletion (done)** | Shared structural format/architecture/sidecar/VAE checks; focused API registry actions in existing model routes; job-reference checks/file leases/deletion journal. | Corrupt/unsupported/incomplete states are distinct; delete refuses active references and updates registry safely; shared/external files and failed cleanup handled; Inspect/Validate APIs tested. |
 | **3A — Hardware facts (done)** | Extend worker heartbeat probes, `system_info.py`, shared hardware facts and API types. Add system RAM and stable GPU identity; fix stopped-worker detection and selected-device precision checks. | GPU/RAM/storage facts and runtime availability have clear provenance; mock/no-GPU paths work; logical indices map correctly under hidden/reordered GPUs. |
-| **3B — Capacity and recommendations** | A backend estimation/recommendation service reusing shared model descriptors and KV cache logic; existing recommendation routes become compatible projections. Configurable reserves. | Every GPU has capacity estimates; installed/candidate rankings deterministic with explanations, backend/VAE/offload checks and unknown states; boundary/missing-data tests pass. |
-| **4A — HF inspection/discovery** | Extend `model_downloads.py` through a focused HF helper, current routes and descriptors. Repo/card/config/files metadata, refs, immutable commit, exact-file/multi-file/repository selection, related quantized candidate discovery. | Existing single-file request still works; invalid/private/missing repo/revision/file cases actionable; previews use the actual destination disk and compatibility assessment. |
+| **3B — Capacity and recommendations (done)** | A backend estimation/recommendation service reusing shared model descriptors and KV cache logic; existing recommendation routes become compatible projections. Configurable reserves. | Every GPU has capacity estimates; installed/candidate rankings deterministic with explanations, backend/VAE/offload checks and unknown states; boundary/missing-data tests pass. |
+| **4A — HF inspection/discovery (done)** | Extend `model_downloads.py` through a focused HF helper, current routes and descriptors. Repo/card/config/files metadata, refs, immutable commit, single/selected/repository previews (transfers in 4B), related quantized candidate discovery. | Existing single-file request still works; invalid/private/missing repo/revision/file cases actionable; previews use the actual destination disk and compatibility assessment. |
 | **4B — Atomic downloads and measured progress** | Extend download job domain and manager, shared locks/staging, pinned HF transfer instrumentation, verification/registration and recovery. Keep current polling API. | Queued → Downloading → Verifying → Registering → complete/readiness result; measured per-file/overall bytes/rate/ETA; unknown totals honest; checksum/size failures never register valid models; interrupted/resumed/cached downloads tested. |
 | **5A — Worker lifecycle and commands** | Extend existing ModelManager/Worker/adapter protocol with explicit state and persisted load/unload command acknowledgements. API forwards commands and reads worker status. | Worker is residency authority for native and GGUF; load/unload/failure/in-use states observable; API never imports torch; mocked backends test transitions. |
 | **5B — Dynamic GPU switch** | Admission/claim coordination, fixed device snapshot, unload old refs, CUDA cleanup/verification, validated target load and rollback using existing manager. Extend `/system/device` status. | Active job safely settles; no unintended dual residency; switch acknowledgements/stages shown; unavailable/OOM/load/unload failures leave coherent usable state; no restart. |
@@ -426,12 +510,12 @@ Production build and real GPU/HF download smoke tests were not run in this analy
 
 - Immediate local GGUF blocker: audio.cpp CLI unavailable. The next code phase can proceed using fixtures; actual inference validation needs a built compatible CLI and CUDA toolchain.
 - Baseline unit gate: missing `yue2_full.json`. The generated mapping exists; do not invent a reference workflow merely to make the assertion pass. Determine whether an authoritative reference can be restored or the test should be made self-contained in a separate, scoped change.
-- New exact metadata should be read from trusted model headers/configs/repository metadata, not model names. Existing recommendation constants are approximate benchmark-derived facts for a particular setup, not hardware guarantees.
+- Exact metadata must come from headers/configuration/repository metadata, not model names. Current recommendations use shared metadata/heuristics and explicit reserves; filename quantization hints remain unverified and never populate validated facts.
 - Determine actual audio.cpp VAE selection/runtime option support against the pinned executable before promising independent GGUF VAE load behavior. Native model/VAE selection already has a working seam.
 - Full-repository downloading must handle shards, optional assets, sizes that HF does not disclose, storage/caching overhead and authenticated HF errors while keeping tokens out of persisted/UI data.
 - Physical GPU switching/release/rollback needs a suitable machine and idle testing window later; mocked lifecycle checks cannot prove CUDA residency release.
 - Server file browsing will target the API host. If a desktop-native picker becomes a requirement, establish the supported launcher/platform explicitly before adding OS GUI integration.
-- No missing information currently blocks Phase 3B. Ask for user input only if a concrete future decision cannot be resolved from existing configuration or requirements.
+- No missing information currently blocks Phase 4B. Ask for user input only if a concrete future decision cannot be resolved from existing configuration or requirements.
 
 ## Reference verification
 
@@ -447,3 +531,7 @@ The HF card lists GGUF variants, F16/F32 VAEs and sidecars and attributes its me
 - **Phase 2C:** added structural/checksum validation, inspection/confirmed deletion APIs, recovery journals, file leases and serialized admission, shared architecture/VAE checks and expanded offline tests/docs. Next: Phase 3A hardware facts.
 
 - **Phase 3A:** shared CPU/RAM/precision facts, UUID GPU merging, nullable sensors, authoritative worker CUDA selection, stopped-worker detection, selected-device capability/VRAM checks and System UI/docs/tests completed. Next: Phase 3B capacity and recommendations.
+
+- **Phase 3B:** shared capacity/metadata-aware model estimates, configurable reserves, deterministic explanations, generic inventory recommendation API, shared task VRAM projection and System UI/docs/tests completed. Daemon interruption recovered. Next: Phase 4A HF inspection/discovery.
+
+- **Phase 4A:** repository/card/config/files/ref inspection, immutable selection previews/destination storage, quantized-lineage discovery, shared candidate estimates, existing Settings flow and offline/API/live-metadata tests/docs completed. Existing single-file transfer remains compatible; selected/repository transfers and atomic byte progress are next (4B).

@@ -94,6 +94,15 @@ def _read_json(path: Path) -> dict | None:
         return None
 
 
+def kv_cache_bytes_per_token(config: dict) -> int:
+    """Keys and values in BF16, shared by token and hardware estimates."""
+    values = [config.get(key) for key in ("num_hidden_layers", "num_key_value_heads", "head_dim")]
+    if all(type(value) is int and value > 0 for value in values):
+        layers, kv_heads, head_dim = values
+        return layers * 2 * kv_heads * head_dim * 2
+    return 0
+
+
 @lru_cache(maxsize=8)
 def load_model_limits(
     configs_dir: str, model_dir: str | None = None, vae_dir: str | None = None, family: str = "yue2"
@@ -122,12 +131,8 @@ def load_model_limits(
     kv_bytes_per_token = 0
     if model_dir:
         config = _read_json(Path(model_dir) / "config.json") or {}
-        layers = config.get("num_hidden_layers")
-        kv_heads = config.get("num_key_value_heads")
-        head_dim = config.get("head_dim")
-        if all(isinstance(value, int) and value > 0 for value in (layers, kv_heads, head_dim)):
-            # keys and values, bfloat16
-            kv_bytes_per_token = layers * 2 * kv_heads * head_dim * 2
+        kv_bytes_per_token = kv_cache_bytes_per_token(config)
+        if kv_bytes_per_token:
             sources["kv_cache_bytes_per_token"] = f"{model_dir}/config.json"
 
     if vae_dir:

@@ -1,16 +1,17 @@
 """Model inventory, backend capabilities, the form schema and token budgeting."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query
 from pydantic import BaseModel
 
-from app.core.deps import budget_provider, capability_provider, model_downloads_provider, model_service_provider
+from app.core.deps import budget_provider, capability_provider, model_downloads_provider, model_service_provider, system_info_provider
 from app.services.budget import BudgetService
 from app.services.capabilities import CapabilityService
 from app.services.model_downloads import ModelDownloads
 from app.services.models import ModelService
+from app.services.system_info import SystemInfoService
 
 router = APIRouter(tags=["models"])
 
@@ -19,6 +20,71 @@ class DownloadRequest(BaseModel):
     repo_id: str
     filename: str
     revision: str | None = None
+
+
+class InspectHubRequest(BaseModel):
+    repo_id: str
+    revision: str | None = None
+    device_index: int | None = None
+
+
+class PreviewHubRequest(InspectHubRequest):
+    filename: str
+    mode: Literal["single", "selected", "repository"] = "single"
+    selected_files: list[str] | None = None
+
+
+def _assess_inspection(inspection: dict, system: SystemInfoService, capabilities: CapabilityService,
+                       device_index: int | None) -> dict:
+    contexts = inspection.pop("candidate_contexts")
+    ids = {c["model"]["id"] for c in inspection["candidates"]}
+    result = system.model_recommendation(
+        device_index=device_index,
+        entries=[*capabilities.local_models(), *(c["model"] for c in inspection["candidates"])],
+        candidate_contexts=contexts,
+    )
+    return {**inspection, "device_index": result["device_index"],
+            "assessments": [a for a in result["items"] if a["id"] in ids],
+            "by_gpu": [{"device_index": g["device_index"], "items": [a for a in g["items"] if a["id"] in ids]}
+                       for g in result["by_gpu"]]}
+
+
+@router.post("/models/hub/inspect")
+def inspect_hub(
+    payload: InspectHubRequest,
+    downloads: ModelDownloads = Depends(model_downloads_provider),
+    system: SystemInfoService = Depends(system_info_provider),
+    capabilities: CapabilityService = Depends(capability_provider),
+) -> dict:
+    return _assess_inspection(downloads.hub.inspect(payload.repo_id, payload.revision), system, capabilities, payload.device_index)
+
+
+@router.post("/models/hub/preview")
+def preview_hub(
+    payload: PreviewHubRequest,
+    downloads: ModelDownloads = Depends(model_downloads_provider),
+    system: SystemInfoService = Depends(system_info_provider),
+    capabilities: CapabilityService = Depends(capability_provider),
+) -> dict:
+    inspection = downloads.hub.inspect(payload.repo_id, payload.revision)
+    preview = downloads.hub.preview(inspection, payload.filename, mode=payload.mode, selected_files=payload.selected_files)
+    assessment = _assess_inspection(inspection, system, capabilities, payload.device_index)
+    model_id = preview["candidate"]["model"]["id"]
+    return {**preview, "device_index": assessment["device_index"],
+            "assessment": next((a for a in assessment["assessments"] if a["id"] == model_id), None)}
+
+
+@router.get("/models/hub/discover")
+def discover_hub(
+    base_model: str = "m-a-p/YuE2-3B", limit: int = Query(10, ge=1, le=20), device_index: int | None = None,
+    downloads: ModelDownloads = Depends(model_downloads_provider),
+    system: SystemInfoService = Depends(system_info_provider),
+    capabilities: CapabilityService = Depends(capability_provider),
+) -> dict:
+    result = downloads.hub.discover(base_model, limit)
+    result["items"] = [(_assess_inspection(item, system, capabilities, device_index) if "error" not in item
+                        else {k: v for k, v in item.items() if k != "candidate_contexts"}) for item in result["items"]]
+    return result
 
 
 @router.get("/models/hub")

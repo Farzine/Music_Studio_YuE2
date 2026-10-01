@@ -101,11 +101,15 @@ def test_offline_physical_cards_are_not_cuda_choices(store, monkeypatch):
     assert service(store).devices()["devices"] == []  # Do not offer hidden physical cards.
 
 
-def test_vram_warning_uses_selected_gpu(store, monkeypatch):
+def test_vram_warning_projects_selected_model_estimate(store, monkeypatch):
     instance = service(store)
-    monkeypatch.setattr(instance, "devices", lambda: dict(selected_index=1, devices=[
-        dict(index=0, memory_free_bytes=50*2**30), dict(index=1, memory_free_bytes=2*2**30)]))
-    assert instance.vram_risk(60, "tiled", 40)["available_gib"] == 2
+    reference = store.settings.model_reference
+    monkeypatch.setattr(instance, "model_recommendation", lambda **kw: dict(device_index=1, items=[
+        dict(id=reference, safe_budget_bytes=2*2**30, peak_bytes=6*2**30, excess_bytes=4*2**30)]))
+    risk = instance.vram_risk(60, "tiled", 40)
+    assert risk["available_gib"] == 2
+    assert "GPU 1" in risk["message"]
+    assert instance.vram_risk(60, "tiled", 40, model="another/model") is None
 
 
 def test_ram_reports_memavailable_not_memfree(monkeypatch):

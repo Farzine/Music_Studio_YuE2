@@ -13,23 +13,15 @@ import socket
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from yue2_studio_core.models import JobStatus
 from yue2_studio_core.hardware import precision_capabilities, system_memory
+from yue2_studio_core.model_metadata import ModelMetadata, audiocpp_available, resolve_model_reference, resolve_vae_reference
+from yue2_studio_core.model_recommendations import assess_model, gpu_capacity, sort_recommendations
+from yue2_studio_core.errors import ValidationError
 from yue2_studio_core.queue import FilesystemJobQueue
 from yue2_studio_core.settings import Settings
 from yue2_studio_core.store import Store
 
 HEARTBEAT_STALE_AFTER = timedelta(seconds=30)
-
-# Published longform peak VRAM on an RTX 5090; leave 20% or 1 GiB of
-# headroom, whichever is larger. ponytail: benchmark-based estimate; replace
-# with per-device observed peaks when enough real runs have been collected.
-GGUF_VARIANTS = (
-    ("Q4_0", "yue2-3b-q4_0.gguf", 2_665_632_320, 7_755),
-    ("Q8_0", "yue2-3b-q8_0.gguf", 4_264_186_432, 8_867),
-    ("BF16", "yue2-3b-bf16.gguf", 7_261_475_392, 12_535),
-)
-
 
 def _optional(probe):
     """An unsupported sensor must not hide all the other hardware facts."""
@@ -212,6 +204,8 @@ class SystemInfoService:
                     "precision_source": entry.get("precision_source", "unknown"),
                     "allocated_bytes": entry.get("allocated_bytes"),
                     "reserved_bytes": entry.get("reserved_bytes"),
+                    "worker_busy": bool(worker.get("current_generation_id") or worker.get("state") == "busy"),
+                    "loaded_vae": (worker.get("model") or {}).get("vae"),
                     "loaded_model": (worker.get("model") or {}).get("model") if (
                         (worker.get("model") or {}).get("loaded")
                         and (worker.get("model") or {}).get("device_index") == entry["index"]
@@ -266,31 +260,56 @@ class SystemInfoService:
             ),
         }
 
-    def model_recommendation(self) -> dict:
-        inventory = self.devices()
-        selected = next((item for item in inventory["devices"] if item["index"] == inventory["selected_index"]), None)
-        if not selected or not selected.get("selectable", True) or not selected.get("memory_total_bytes") or selected.get("memory_free_bytes") is None:
-            return {"device_index": inventory["selected_index"], "available_bytes": None,
-                    "variants": [], "recommended": None, "max_model_bytes": None,
-                    "max_parameters": None, "note": "GPU memory is unavailable; a recommendation cannot be calculated."}
-        worker_pids = {entry.get("pid") for entry in self.worker_state()["workers"] if entry.get("online")}
-        own_bytes = sum(p["used_bytes"] or 0 for p in selected.get("processes") or [] if p["pid"] in worker_pids)
-        available = int(selected["memory_free_bytes"] or 0) + own_bytes
-        variants = []
-        for label, filename, size, peak_mib in GGUF_VARIANTS:
-            peak = peak_mib * 1024**2
-            required = int(max(peak * 1.2, peak + 1024**3))
-            variants.append({
-                "label": label, "repo_id": "audio-cpp/Yue2-3B-GGUF", "filename": filename,
-                "model_bytes": size, "parameters": 3_000_000_000, "peak_bytes": peak,
-                "required_bytes": required, "runnable": available >= required,
-            })
-        recommended = next((item for item in reversed(variants) if item["runnable"]), None)
-        return {"device_index": selected["index"], "available_bytes": available,
-                "variants": variants, "recommended": recommended,
-                "max_model_bytes": recommended["model_bytes"] if recommended else None,
-                "max_parameters": recommended["parameters"] if recommended else None,
-                "note": "Conservative estimates from one published RTX 5090 longform benchmark; actual use varies with song length and other GPU workloads."}
+    def model_recommendation(self, *, device_index: int | None = None, vae: str = "standard",
+                             offload_ar: bool = False, compute_backend: str = "torch",
+                             memory_budget_gib: float = 40, entries: list[dict] | None = None,
+                             candidate_contexts: dict[str, dict] | None = None) -> dict:
+        # Import locally: capabilities also consumes hardware facts, but the
+        # inventory/runtime prerequisite rules remain owned by that service.
+        from app.services.capabilities import CapabilityService
+
+        state = self.worker_state()
+        inventory = self.devices(state=state)
+        selected_index = inventory["selected_index"] if device_index is None else device_index
+        if device_index is not None and not any(d["index"] == device_index for d in inventory["devices"]):
+            raise ValidationError(f"GPU {device_index} is not present in the worker hardware inventory.")
+        models = [ModelMetadata.model_validate(entry) for entry in (
+            entries if entries is not None else CapabilityService(self.settings, self.store).local_models())]
+        vae_reference = resolve_vae_reference(vae, self.settings)
+        decoder = next((m for m in models if m.role == "vae" and vae_reference in [m.id, *m.aliases]), None)
+        worker = next((w for w in state["workers"] if w.get("online")), {})
+        versions = worker.get("runtime", {})
+        runtime = {"backend": worker.get("backend"), "audiocpp_available": audiocpp_available(self.settings),
+                   "native_available": bool(versions.get("torch") and versions.get("yue2-infer"))}
+        memory = system_memory()
+        capacities, by_gpu = [], []
+        for device in inventory["devices"]:
+            capacity = gpu_capacity(device, self.settings)
+            capacities.append(capacity)
+            items = sort_recommendations([
+                assess_model(m, device=device, capacity=capacity, vae=decoder, settings=self.settings,
+                             runtime=runtime, ram=memory, offload_ar=offload_ar,
+                             compute_backend=compute_backend, memory_budget_gib=memory_budget_gib,
+                             **(candidate_contexts or {}).get(m.id, {}))
+                for m in models if m.role == "model"
+            ])
+            by_gpu.append({"device_index": device["index"], "items": items})
+        selected = next((c for c in capacities if c["device_index"] == selected_index), None)
+        items = next((g["items"] for g in by_gpu if g["device_index"] == selected_index), [])
+        recommended = next((item for item in items if item["runnable"]), None)
+        return {"device_index": selected_index, "available_bytes": selected["available_bytes"] if selected else None,
+                "capacities": capacities, "items": items, "by_gpu": by_gpu, "variants": items,
+                "recommended": recommended,
+                "max_model_bytes": selected["comfortable_model_bytes"] if selected else None,
+                "max_parameters": None,  # No universal parameter count independent of precision/architecture.
+                "memory": memory,
+                "scenario": {"vae": vae_reference, "offload_ar": offload_ar,
+                             "compute_backend": compute_backend, "memory_budget_gib": memory_budget_gib},
+                "policy": {key: getattr(self.settings, key) for key in (
+                    "model_vram_safety_fraction", "model_vram_safety_gib", "model_runtime_overhead_gib",
+                    "model_unknown_kv_gib", "model_unknown_vae_gib", "model_weight_overhead_factor")},
+                "note": "Planning estimates, not load guarantees. Capacity is heuristic; model estimates use available metadata. "
+                        "Idle resident memory is reclaimable only after unloading; active allocations stay reserved."}
 
     def info(self) -> dict:
         physical_probe = _gpus()
@@ -339,31 +358,24 @@ class SystemInfoService:
             },
         }
 
-    def vram_risk(self, requested_seconds: float, decoder_mode: str, budget_gib: float) -> dict | None:
-        """Warn before starting when the request looks too large for the GPU.
-
-        This never changes the request. It reports an estimate based on the
-        free memory NVML reports and the decoder mode, and says so.
-        """
-        inventory = self.devices()
-        device = next((d for d in inventory["devices"] if d["index"] == inventory["selected_index"]), None)
-        if device is None or not device.get("selectable", True) or device.get("memory_free_bytes") is None:
+    def vram_risk(self, requested_seconds: float, decoder_mode: str, budget_gib: float,
+                  *, model: str = "default", vae: str = "standard", offload_ar: bool = False,
+                  compute_backend: str = "torch") -> dict | None:
+        """Project the same model estimate into the existing task warning API."""
+        recommendation = self.model_recommendation(vae=vae, offload_ar=offload_ar,
+                                                  compute_backend=compute_backend, memory_budget_gib=budget_gib)
+        reference = resolve_model_reference(model, self.settings)
+        item = next((m for m in recommendation["items"] if reference in [m["id"], *m.get("aliases", [])]), None)
+        if item is None or item["safe_budget_bytes"] is None or item["peak_bytes"] is None:
             return None
-        free_gib = device["memory_free_bytes"] / 2**30
-        # A whole-song decode holds the full waveform and its activations; the
-        # tiled path is bounded by the tile. These coefficients are rough and
-        # are presented to the user as an estimate, not a guarantee.
-        estimate_gib = 12.0 + (requested_seconds / 60.0) * (2.2 if decoder_mode == "full" else 0.35)
-        headroom = min(free_gib, budget_gib)
-        if estimate_gib <= headroom:
+        estimate = item["peak_bytes"] / 2**30
+        available = item["safe_budget_bytes"] / 2**30
+        if decoder_mode != "full" and not item["excess_bytes"]:
             return None
-        return {
-            "level": "warning",
-            "message": (
-                f"Estimated peak of about {estimate_gib:.0f} GiB for {requested_seconds:.0f}s with the "
-                f"{decoder_mode} decoder, against {headroom:.0f} GiB available. This is an estimate; the "
-                "request will run unchanged and will report CUDA_OOM if it does not fit."
-            ),
-            "estimate_gib": round(estimate_gib, 1),
-            "available_gib": round(headroom, 1),
-        }
+        message = (f"Estimated model/VAE/cache/runtime VRAM is {estimate:.1f} GiB against a safe budget of "
+                   f"{available:.1f} GiB on GPU {recommendation['device_index']}. "
+                   "Cache uses full declared context (or a configured reserve), not an exact duration peak. ")
+        if decoder_mode == "full":
+            message += f"Full waveform decoding for {requested_seconds:.0f}s needs additional unprofiled memory; the tiled estimate cannot confirm it. "
+        return {"level": "warning", "message": message + "This estimate does not change your request.",
+                "estimate_gib": round(estimate, 1), "available_gib": round(available, 1)}

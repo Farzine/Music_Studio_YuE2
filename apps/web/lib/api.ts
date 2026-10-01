@@ -7,6 +7,9 @@ import type {
   GpuInventory,
   GenerationSchema,
   ModelDownload,
+  HubInspection,
+  HubPreview,
+  HubDiscovery,
   ModelRecommendation,
   Preset,
   ProjectConfigResponse,
@@ -74,6 +77,15 @@ export const api = {
     request<{ repo_id: string; revision: string; files: { name: string; bytes: number | null }[] }>(
       `/api/v1/models/hub?${new URLSearchParams({ repo_id: repoId, ...(revision ? { revision } : {}) })}`,
     ),
+  inspectModelRepo: (repoId: string, revision?: string) =>
+    request<HubInspection>("/api/v1/models/hub/inspect", {
+      method: "POST", body: JSON.stringify({ repo_id: repoId, revision: revision || null }),
+    }),
+  previewModelDownload: (repoId: string, filename: string, revision?: string) =>
+    request<HubPreview>("/api/v1/models/hub/preview", {
+      method: "POST", body: JSON.stringify({ repo_id: repoId, filename, revision: revision || null }),
+    }),
+  discoverModelRepos: () => request<HubDiscovery>("/api/v1/models/hub/discover"),
   modelDownloads: () => request<{ items: ModelDownload[] }>("/api/v1/models/downloads"),
   startModelDownload: (repoId: string, filename: string, revision?: string) =>
     request<ModelDownload>("/api/v1/models/downloads", {
@@ -84,9 +96,9 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ device_index: deviceIndex }),
     }),
-  vramEstimate: (seconds: number, decoderMode: string, budget: number) =>
+  vramEstimate: (seconds: number, decoderMode: string, budget: number, model = "default", vae = "standard", offloadAr = false, computeBackend = "torch") =>
     request<{ warning: { message: string; estimate_gib: number; available_gib: number } | null }>(
-      `/api/v1/system/vram-estimate?seconds=${seconds}&decoder_mode=${decoderMode}&budget_gib=${budget}`,
+      `/api/v1/system/vram-estimate?${new URLSearchParams({ seconds: String(seconds), decoder_mode: decoderMode, budget_gib: String(budget), model, vae, offload_ar: String(offloadAr), compute_backend: computeBackend })}`,
     ),
 
   schema: () => request<GenerationSchema>("/api/v1/generation/schema"),

@@ -82,16 +82,19 @@ def test_recommendation_uses_selected_gpu_and_headroom(tmp_path, monkeypatch):
     settings = Settings(data_dir=str(tmp_path / "data"))
     store = Store(settings)
     service = SystemInfoService(settings, store, FilesystemJobQueue(store))
-    monkeypatch.setattr(service, "devices", lambda: {
+    monkeypatch.setattr(service, "devices", lambda **kw: {
         "selected_index": 1,
         "devices": [{"index": 1, "memory_total_bytes": 12 * 1024**3,
-                     "memory_free_bytes": 10 * 1024**3, "processes": []}],
+                     "memory_free_bytes": 10 * 1024**3, "processes": [],
+                     "selectable": True, "cuda_available": True}],
     })
     monkeypatch.setattr(service, "worker_state", lambda: {"workers": []})
-    answer = service.model_recommendation()
-    assert answer["recommended"]["label"] == "Q4_0"
-    assert answer["max_parameters"] == 3_000_000_000
-    assert not answer["variants"][2]["runnable"]
+    answer = service.model_recommendation(entries=[])
+    assert answer["device_index"] == 1
+    assert answer["max_parameters"] is None  # capacity varies with precision
+    assert answer["recommended"] is None    # do not fabricate benchmark models
+    assert answer["capacities"][0]["usable_bytes"] < 10 * 1024**3
+    assert answer["max_model_bytes"] > 0
 
 
 def test_idle_gpu_switch_closes_the_previous_pipeline(tmp_path, monkeypatch):

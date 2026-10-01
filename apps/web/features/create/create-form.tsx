@@ -68,6 +68,9 @@ export function CreateForm({
   const decoderMode = (getPath(effective, "decoder.mode") as string) ?? "tiled";
   const budget = (getPath(effective, "model.memory_budget_gib") as number) ?? 40;
   const selectedModel = (getPath(effective, "model.checkpoint") as string) ?? "default";
+  const selectedVae = (getPath(effective, "model.vae") as string) ?? "standard";
+  const offloadAr = (getPath(effective, "model.offload_ar") as boolean) ?? false;
+  const computeBackend = (getPath(effective, "model.compute_backend") as string) ?? "torch";
   const modelOption = schema?.parameters.find((item) => item.key === "model.checkpoint")?.options
     ?.find((item) => item.value === selectedModel);
   const gguf = modelOption?.format === "gguf";
@@ -97,7 +100,7 @@ export function CreateForm({
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const result = await api.vramEstimate(duration, decoderMode, budget);
+        const result = await api.vramEstimate(duration, decoderMode, budget, selectedModel, selectedVae, offloadAr, computeBackend);
         if (!cancelled) setVramWarning(result.warning?.message ?? null);
       } catch {
         if (!cancelled) setVramWarning(null);
@@ -107,7 +110,7 @@ export function CreateForm({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [duration, decoderMode, budget]);
+  }, [duration, decoderMode, budget, selectedModel, selectedVae, offloadAr, computeBackend]);
 
   const needsLyrics = mode !== "off";
   const needsReference = mode === "cover";

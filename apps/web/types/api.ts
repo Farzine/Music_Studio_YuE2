@@ -346,22 +346,129 @@ export interface GpuInventory {
   note: string | null;
 }
 
+export interface ModelCapacity {
+  device_index: number;
+  name: string | null;
+  basis: string;
+  free_bytes: number | null;
+  available_bytes: number | null;
+  reclaimable_bytes: number;
+  usable_bytes: number | null;
+  safety_margin_bytes: number | null;
+  fixed_overhead_bytes: number;
+  comfortable_model_bytes: number | null;
+  conservative_model_bytes: number | null;
+  upper_model_bytes: number | null;
+  quantizations: { quantization: string; effective_storage_bits: number; approximate_parameters: number | null; hardware_eligible: boolean | null }[];
+  reasons: string[];
+}
+
+export interface ModelAssessment {
+  id: string;
+  registry_id: string | null;
+  label: string;
+  repo_id: string | null;
+  filename: string | null;
+  format: string;
+  backend: string | null;
+  quantization: string | null;
+  precision: string | null;
+  architecture: string | null;
+  model_bytes: number | null;
+  parameters: number | null;
+  device_index: number;
+  status: "ready" | "recommended" | "supported" | "possibly_supported" | "not_recommended" | "cannot_run" | "unknown";
+  reasons: string[];
+  inference_ready: boolean;
+  currently_loaded: boolean;
+  runnable: boolean;
+  peak_bytes: number | null;
+  required_bytes: number | null;
+  safe_budget_bytes: number | null;
+  excess_bytes: number | null;
+  vae_id: string | null;
+  offload_supported: boolean;
+  offload_requested: boolean;
+  estimate: {
+    basis: string;
+    weights_bytes: number | null;
+    weight_runtime_bytes: number | null;
+    vae_bytes: number;
+    vae_size_known: boolean;
+    kv_cache_bytes: number;
+    kv_source: string;
+    runtime_overhead_bytes: number;
+    estimated_peak_bytes: number | null;
+    conservative_peak_bytes: number | null;
+    estimated_system_ram_bytes: number | null;
+    assumptions: string[];
+  };
+}
+
 export interface ModelRecommendation {
   device_index: number;
   available_bytes: number | null;
-  variants: {
-    label: string;
-    repo_id: string;
-    filename: string;
-    model_bytes: number;
-    parameters: number;
-    peak_bytes: number;
-    required_bytes: number;
-    runnable: boolean;
-  }[];
-  recommended: ModelRecommendation["variants"][number] | null;
+  capacities: ModelCapacity[];
+  items: ModelAssessment[];
+  by_gpu: { device_index: number; items: ModelAssessment[] }[];
+  variants: ModelAssessment[];
+  recommended: ModelAssessment | null;
   max_model_bytes: number | null;
   max_parameters: number | null;
+  memory: SystemInfo["memory"];
+  scenario: { vae: string; offload_ar: boolean; compute_backend: string; memory_budget_gib: number };
+  policy: Record<string, number>;
+  note: string;
+}
+
+export interface HubFile {
+  name: string;
+  bytes: number | null;
+  extension: string;
+  checksum_sha256: string | null;
+}
+
+export interface HubCandidate {
+  model: ModelEntry;
+  required_files: string[];
+  missing_files: string[];
+  quantization_hint: string | null;
+  metadata_basis: string;
+}
+
+export interface HubInspection {
+  repo_id: string;
+  requested_revision: string;
+  revision: string;
+  description: string | null;
+  license: string | null;
+  revisions: { name: string; kind: "branch" | "tag"; commit_hash: string }[];
+  files: HubFile[];
+  candidates: HubCandidate[];
+  warnings: string[];
+  device_index: number;
+  assessments: ModelAssessment[];
+  by_gpu: { device_index: number; items: ModelAssessment[] }[];
+}
+
+export interface HubPreview {
+  repo_id: string;
+  revision: string;
+  filename: string;
+  files: HubFile[];
+  total_bytes: number | null;
+  known_bytes: number;
+  free_bytes: number;
+  destination: string;
+  disk_status: "sufficient" | "insufficient" | "unknown";
+  can_download: boolean;
+  candidate: HubCandidate;
+  assessment: ModelAssessment | null;
+  warnings: string[];
+}
+
+export interface HubDiscovery {
+  items: (HubInspection | { repo_id: string; error: { error_message: string } })[];
   note: string;
 }
 

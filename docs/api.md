@@ -4,10 +4,16 @@ Base URL `http://127.0.0.1:8000`. Interactive documentation at `/docs`.
 
 ## Model setup
 
-- `GET /api/v1/system/model-recommendation` ranks supported YuE2 GGUF variants for the selected GPU.
+- `GET /api/v1/system/model-recommendation` assesses registered native/GGUF models for the selected GPU.
 - `GET /api/v1/models/hub?repo_id=owner/name&revision=main` lists remote GGUF and safetensors files.
+- `POST /api/v1/models/hub/inspect` accepts `repo_id`, optional `revision`/`device_index`; returns resolved commit, branches/tags, all file sizes/checksums, metadata and hardware assessments.
+- `POST /api/v1/models/hub/preview` adds a primary `filename`, optional `mode` (`single`, `selected`, `repository`) and `selected_files`; reports selection, actual destination disk space and compatibility. Multi-file/repository transfers follow in Phase 4B; these modes currently preview only.
+- `GET /api/v1/models/hub/discover?base_model=m-a-p/YuE2-3B&limit=10` inspects quantized-lineage repositories, including per-repository errors and hardware assessments. Optional `device_index`; limit 1–20.
 - `POST /api/v1/models/downloads` accepts `{ "repo_id": "owner/name", "filename": "file.gguf", "revision": "main" }` and returns a download ID.
 - `GET /api/v1/models/downloads` and `GET /api/v1/models/downloads/{id}` report file progress, completion, and failures. Completed compatible models appear in the existing model inventory and generation schema.
+
+See [Hugging Face model inspection](huggingface-models.md) for metadata provenance,
+selection modes, Unknown fields, authentication, errors and current transfer limits.
 
 Every error uses the same envelope:
 
@@ -31,6 +37,7 @@ Codes come from `ErrorCode`; see [troubleshooting.md](troubleshooting.md).
 | `GET` | `/api/v1/system/info` | Physical GPUs (NVML), CPU/RAM, disk, queue, worker heartbeat and runtime versions. |
 | `GET` | `/api/v1/system/vram-estimate` | `?seconds=&decoder_mode=&budget_gib=` — returns a warning or `null`. An estimate, clearly labelled as one; it never changes the request. |
 | `GET` | `/api/v1/system/gpus` | Worker CUDA GPUs with runtime/precision/residency facts; informational physical cards when offline. Check `selectable`. |
+| `GET` | `/api/v1/system/model-recommendation` | Per-GPU capacity and explainable registered-model assessments. Optional device/VAE/offload/compute/budget scenario. |
 | `PUT` | `/api/v1/system/device` | `{"device_index": 1}` — choose the GPU. Applies to the next job; a run in flight finishes where it started. |
 
 ### Choosing a GPU
@@ -90,10 +97,19 @@ malformed timestamps and known dead local PIDs are offline. Remote/legacy PIDs
 are not checked against the API host. Old heartbeats lacking UUID cannot be
 merged safely; restart the worker once to get the new facts.
 
-The existing recommendation endpoint remains a limited published YuE2 benchmark
-estimate. General model capacity, configurable reserves and metadata-aware
-recommendations are pending. Memory warnings use the selected worker device,
-and return unknown when that device or its free memory is unconfirmed.
+The recommendation endpoint now returns `capacities`, selected-device `items`,
+`by_gpu`, effective `policy` and `scenario`. Legacy `variants` projects the same
+model assessments; no fixed benchmark files or parameter counts are fabricated.
+`max_model_bytes` is the comfortable heuristic capacity; `max_parameters` is null.
+Per-quantization hypothetical capacities live in `capacities[].quantizations`.
+Query options: `device_index`, `vae`, `offload_ar`, `compute_backend` and
+`budget_gib`. An explicitly missing GPU or invalid scenario returns 422.
+
+Task memory warnings use the same shared model/VAE/cache/runtime estimate, with
+`model`, `vae`, `offload_ar` and `compute_backend` query options added to the
+existing `/vram-estimate` API. Full waveform decoding reports additional
+unprofiled memory rather than claiming the tiled estimate covers it. See
+[capacity, statuses, coefficients and uncertainty](model-recommendations.md).
 
 ## Models, capabilities and schema
 

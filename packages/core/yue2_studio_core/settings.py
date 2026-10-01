@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     yue2_local_files_only: bool = True
     audiocpp_cli_path: str = "./tools/audio.cpp/build/bin/audiocpp_cli"
 
+    model_vram_safety_fraction: float = Field(default=0.20, ge=0, lt=1, allow_inf_nan=False)
+    model_vram_safety_gib: float = Field(default=1.0, ge=0, le=1_000_000, allow_inf_nan=False)
+    model_runtime_overhead_gib: float = Field(default=2.0, ge=0, le=1_000_000, allow_inf_nan=False)
+    model_unknown_kv_gib: float = Field(default=2.0, ge=0, le=1_000_000, allow_inf_nan=False)
+    model_unknown_vae_gib: float = Field(default=2.0, ge=0, le=1_000_000, allow_inf_nan=False)
+    model_weight_overhead_factor: float = Field(default=1.25, ge=1, le=100, allow_inf_nan=False)
+
     comfy_api_url: str | None = None
     comfy_workflow_path: str = "./yue2_full.json"
 

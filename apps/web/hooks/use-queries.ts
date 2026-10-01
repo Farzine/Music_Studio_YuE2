@@ -64,6 +64,8 @@ export function useSelectDevice() {
       client.setQueryData(keys.gpus, data);
       client.invalidateQueries({ queryKey: keys.system });
       client.invalidateQueries({ queryKey: keys.modelRecommendation });
+      client.invalidateQueries({ queryKey: keys.capabilities });
+      client.invalidateQueries({ queryKey: keys.schema });
     },
   });
 }

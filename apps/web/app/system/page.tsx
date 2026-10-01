@@ -25,7 +25,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 export default function SystemPage() {
   const { data, isLoading } = useSystemInfo();
   const { data: capabilities } = useCapabilities();
-  const { data: recommendation } = useModelRecommendation();
+  const { data: recommendation, isLoading: recommendationsLoading, error: recommendationsError } = useModelRecommendation();
 
   if (isLoading || !data) {
     return (
@@ -72,29 +72,73 @@ export default function SystemPage() {
         </CardContent>
       </Card>
 
+      {recommendationsError ? <ErrorNotice title="Model estimates" message={recommendationsError.message} /> : null}
+      {recommendationsLoading ? <Skeleton className="h-48 w-full" /> : null}
       <Card>
         <CardHeader>
-          <CardTitle>Recommended music model</CardTitle>
-          <CardDescription>Based on available memory on GPU {recommendation?.device_index ?? "—"}, with headroom for generation.</CardDescription>
+          <CardTitle>Model capacity</CardTitle>
+          <CardDescription>Heuristic limits for each worker GPU. Model metadata and runtime compatibility must be checked separately.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {recommendation?.recommended ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] bg-[var(--color-accent-soft)] p-4">
-              <Badge tone="accent">estimated fit</Badge>
-              <span className="font-semibold">YuE2 3B · {recommendation.recommended.label}</span>
-              <span className="text-sm text-[var(--color-ink-muted)]">{formatBytes(recommendation.max_model_bytes ?? 0)} model file · published 3B benchmark variants</span>
-            </div>
-          ) : <p className="text-sm text-[var(--color-ink-muted)]">{recommendation?.variants.length ? "No benchmark variant fits the estimated memory budget." : "GPU memory is unconfirmed; start the worker to estimate compatibility."}</p>}
-          <div className="grid gap-2 sm:grid-cols-3">
-            {(recommendation?.variants ?? []).map((variant) => (
-              <div key={variant.filename} className="rounded-[var(--radius-md)] border border-[var(--color-line)] p-3">
-                <div className="flex items-center justify-between gap-2"><strong className="text-sm">{variant.label}</strong><Badge tone={variant.runnable ? "accent" : "neutral"}>{variant.runnable ? "estimated fit" : "insufficient headroom"}</Badge></div>
-                <p className="mt-2 text-xs text-[var(--color-ink-muted)]">{formatBytes(variant.model_bytes)} model · {formatBytes(variant.required_bytes)} recommended free VRAM</p>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {(recommendation?.capacities ?? []).map((capacity) => (
+              <div key={capacity.device_index} className="rounded-[var(--radius-md)] border border-[var(--color-line)] p-4">
+                <h3 className="text-sm font-semibold">GPU {capacity.device_index} · {capacity.name ?? "Unknown"}</h3>
+                <Row label="Currently free VRAM" value={formatBytes(capacity.free_bytes)} />
+                <Row label="Usable VRAM after reserve" value={formatBytes(capacity.usable_bytes)} />
+                <Row label="Safety reserve" value={formatBytes(capacity.safety_margin_bytes)} />
+                <Row label="Conservative file size" value={formatBytes(capacity.conservative_model_bytes)} />
+                <Row label="Comfortable file size" value={formatBytes(capacity.comfortable_model_bytes)} />
+                <Row label="Approximate upper file limit" value={formatBytes(capacity.upper_model_bytes)} />
+                <p className="mt-3 text-xs text-[var(--color-ink-faint)]">Approximate parameter capacity by storage precision; quantized runtime support is assessed per model:</p>
+                {capacity.quantizations.map((quant) => (
+                  <Row key={quant.quantization} label={quant.quantization} value={quant.hardware_eligible === false ? "Hardware precision ineligible" : quant.approximate_parameters == null ? "Unknown" : `≈ ${(quant.approximate_parameters / 1e9).toFixed(1)}B parameters`} />
+                ))}
+                <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-[var(--color-ink-muted)]">{capacity.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
               </div>
             ))}
           </div>
+          {!recommendationsLoading && !recommendation?.capacities.length ? <p className="text-sm text-[var(--color-ink-muted)]">No GPU capacity facts are available. Start the worker and check the NVIDIA runtime.</p> : null}
           <p className="text-xs text-[var(--color-ink-faint)]">{recommendation?.note}</p>
-          <Button variant="surface" size="sm" asChild><Link href="/settings">Browse and download models</Link></Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recommended models</CardTitle>
+          <CardDescription>Installed model assessments for GPU {recommendation?.device_index ?? "—"}. Sorted by compatibility, memory estimate and stable model ID.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {recommendation?.recommended ? <p className="rounded-[var(--radius-md)] bg-[var(--color-accent-soft)] p-3 text-sm">Recommended selection: <strong>{recommendation.recommended.label}</strong>. Estimated compatibility requires the stated configuration.</p> : <p className="text-sm text-[var(--color-ink-muted)]">No model is currently recommended. Review the reasons below; downloaded and inference-ready are separate states.</p>}
+          <div className="grid gap-3 lg:grid-cols-2">
+            {(recommendation?.items ?? []).map((item) => (
+              <div key={item.id} className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-line)] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="min-w-0 break-words text-sm font-semibold">{item.label}</h3><Badge tone={item.runnable ? "accent" : "neutral"}>{item.status === "unknown" ? "Unknown / needs validation" : item.status.replaceAll("_", " ")}</Badge></div>
+                <p className="mt-2 break-all text-xs text-[var(--color-ink-faint)]">{item.repo_id ?? item.id}</p>
+                <Row label="Format / backend" value={`${item.format} / ${item.backend ?? "Unknown"}`} />
+                <Row label="Quantization / precision" value={`${item.quantization ?? "Unknown"} / ${item.precision ?? "Unknown"}`} />
+                <Row label="Parameters (metadata)" value={item.parameters == null ? "Unknown" : item.parameters.toLocaleString()} />
+                <Row label="Model file size" value={formatBytes(item.model_bytes)} />
+                <Row label="Estimated runtime VRAM" value={formatBytes(item.estimate.estimated_peak_bytes)} />
+                <Row label="Safe VRAM budget" value={formatBytes(item.safe_budget_bytes)} />
+                <Row label="Inference prerequisites" value={item.inference_ready ? "Available" : "Needs attention"} />
+                <Row label="Currently loaded" value={item.currently_loaded ? "Yes" : "Not reported"} />
+                <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-[var(--color-ink-muted)]">{item.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+                <details className="mt-3 text-xs text-[var(--color-ink-faint)]">
+                  <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-accent)]">Memory estimate details</summary>
+                  <Row label="Expanded weights" value={formatBytes(item.estimate.weight_runtime_bytes)} />
+                  <Row label="VAE" value={formatBytes(item.estimate.vae_bytes)} />
+                  <Row label="KV cache" value={formatBytes(item.estimate.kv_cache_bytes)} />
+                  <Row label="Runtime workspace" value={formatBytes(item.estimate.runtime_overhead_bytes)} />
+                  <Row label="Estimated loading RAM" value={formatBytes(item.estimate.estimated_system_ram_bytes)} />
+                  <p className="mt-2">{item.estimate.basis.replaceAll("_", " ")} · cache: {item.estimate.kv_source.replaceAll("_", " ")}</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4">{item.estimate.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul>
+                </details>
+              </div>
+            ))}
+          </div>
+          {recommendation ? <p className="break-all text-xs text-[var(--color-ink-faint)]">Scenario: {recommendation.scenario.compute_backend}, {recommendation.scenario.memory_budget_gib} GiB native budget, VAE {recommendation.scenario.vae}, AR offload {recommendation.scenario.offload_ar ? "requested" : "off"}.</p> : null}
+          <Button variant="surface" size="sm" asChild><Link href="/settings">Installed models and downloads</Link></Button>
         </CardContent>
       </Card>
 
