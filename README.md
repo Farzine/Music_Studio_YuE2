@@ -688,6 +688,10 @@ make smoke-test       # a real generation on the GPU
 cd apps/web && npm test # dependency-free frontend preview selection regression
 ```
 
+Rendered model-management tests run at desktop/mobile widths with intercepted
+API responses and no GPU. See [testing instructions](docs/testing.md) for browser
+setup, coverage, worker checks and failure artifacts.
+
 ---
 
 ## Troubleshooting

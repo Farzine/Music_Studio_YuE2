@@ -64,7 +64,9 @@ def test_setting_a_comfy_only_parameter_is_reported_not_dropped(data_dir):
 
 def test_workflow_mapping_matches_the_reference_workflow(data_dir):
     mapping = load_workflow_mapping()
-    workflow = json.loads((REPO_ROOT / "yue2_full.json").read_text())
+    # Original published graph from b326eea; the optional root workflow was
+    # removed in dbfd0af. CI must not depend on a user's runtime workflow.
+    workflow = json.loads((REPO_ROOT / "tests/fixtures/yue2_full.reference.json").read_text())
     assert mapping["node_count"] == len(workflow["nodes"])
     assert mapping["workflow_id"] == workflow["id"]
 

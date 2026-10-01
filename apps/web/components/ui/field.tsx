@@ -93,7 +93,7 @@ export function Field({
       </div>
       {children}
       {error ? (
-        <p className="text-xs text-[var(--color-danger)]">{error}</p>
+        <p id={htmlFor ? `${htmlFor}-error` : undefined} className="text-xs text-[var(--color-danger)]">{error}</p>
       ) : disabled && disabledReason ? (
         <p className="text-xs leading-relaxed text-[var(--color-warn)]">{disabledReason}</p>
       ) : description ? (

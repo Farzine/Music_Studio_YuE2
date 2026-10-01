@@ -21,8 +21,10 @@ export function TaskSelectors({ config, options, error, pending, onChange }: {
       const displayed = label === "GPU" && value == null && options?.backend === "native" ? options.selected_device_index : value;
       const encoded = displayed == null ? "backend" : String(displayed);
       const current = choices?.find((option) => option.value === displayed);
+      const invalid = !pending && !current?.enabled;
       return <Field key={path} label={label} htmlFor={`task-${label}`} error={!pending && !current?.enabled ? current?.disabled_reason ?? `Choose an available ${label}.` : undefined}>
-        <select id={`task-${label}`} value={encoded} disabled={pending || !options || !!error} onChange={(event) => onChange(path,
+        <select id={`task-${label}`} value={encoded} aria-invalid={invalid} aria-describedby={invalid ? `task-${label}-error` : undefined}
+          disabled={pending || !options || !!error} onChange={(event) => onChange(path,
           label === "GPU" ? event.target.value === "backend" ? null : Number(event.target.value) : event.target.value)}
           className="w-full rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-canvas)] p-2 text-sm">
           {!current?.enabled ? <option value={encoded} disabled>{pending ? "Checking availability…" : `Unavailable selection: ${displayed ?? "None"}`}</option> : null}

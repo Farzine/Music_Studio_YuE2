@@ -12,6 +12,31 @@ const overlay =
 const panel =
   "overlay-content fixed left-1/2 top-1/2 z-50 w-[min(34rem,calc(100vw-2rem))] max-h-[85dvh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--color-line)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-lg)]";
 
+/** Controlled dialogs can be opened without a Radix Trigger. */
+function useReturnFocus(open: boolean) {
+  const opener = React.useRef<HTMLElement | null>(null);
+  const remember = React.useCallback(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body && !active.closest('[role="dialog"], [role="alertdialog"]')) opener.current = active;
+  }, []);
+  React.useEffect(() => {
+    if (open) return;
+    // Async previews can temporarily disable the opening button and blur it.
+    remember();
+    document.addEventListener("focusin", remember);
+    return () => document.removeEventListener("focusin", remember);
+  }, [open, remember]);
+  return {
+    onOpenAutoFocus: remember,
+    onCloseAutoFocus: (event: Event) => {
+      if (opener.current?.isConnected) {
+        event.preventDefault();
+        opener.current.focus();
+      }
+    },
+  };
+}
+
 export function Dialog({
   open,
   onOpenChange,
@@ -29,11 +54,12 @@ export function Dialog({
   footer?: React.ReactNode;
   className?: string;
 }) {
+  const focus = useReturnFocus(open);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className={overlay} />
-        <DialogPrimitive.Content className={cn(panel, className)}>
+        <DialogPrimitive.Content className={cn(panel, className)} {...focus}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 space-y-1">
               <DialogPrimitive.Title className="text-base font-semibold">{title}</DialogPrimitive.Title>
@@ -90,11 +116,12 @@ export function ConfirmDialog({
   disabled?: boolean;
   onConfirm: () => void | Promise<void>;
 }) {
+  const focus = useReturnFocus(open);
   return (
     <AlertDialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialogPrimitive.Portal>
         <AlertDialogPrimitive.Overlay className={overlay} />
-        <AlertDialogPrimitive.Content className={cn(panel, "w-[min(30rem,calc(100vw-2rem))]")}>
+        <AlertDialogPrimitive.Content className={cn(panel, "w-[min(30rem,calc(100vw-2rem))]")} {...focus}>
           <AlertDialogPrimitive.Title className="text-base font-semibold">{title}</AlertDialogPrimitive.Title>
           {description ? (
             <AlertDialogPrimitive.Description className="mt-2 text-sm leading-relaxed text-[var(--color-ink-muted)]">

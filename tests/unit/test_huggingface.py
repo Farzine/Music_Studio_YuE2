@@ -49,6 +49,20 @@ def test_remote_config_and_vae_use_the_existing_estimator(tmp_path, hub_reposito
     assert memory["estimated_peak_bytes"] > candidate["bytes"]
 
 
+def test_native_decoder_inspection_preserves_role_and_requires_its_configuration(tmp_path, hub_repository):
+    hub_repository.configs["config.json"] = {"model_type": "yue2_vae", "latent_dim": 64}
+    hub = service(tmp_path)
+    inspection = hub.inspect("owner/repository")
+    decoder = next(c for c in inspection["candidates"] if c["model"]["filename"] == "model.safetensors")
+    assert decoder["model"]["role"] == "vae"
+    assert decoder["model"]["parameter_count"] is None
+    assert decoder["required_files"] == ["model.safetensors", "config.json"]
+    preview = hub.preview(inspection, "model.safetensors", mode="selected", selected_files=[])
+    assert preview["missing_required_files"] == ["config.json"]
+    with pytest.raises(ValidationError, match="bundled F16"):
+        hub.preview(inspection, GGUF_COMPANIONS[0])
+
+
 def test_preview_modes_and_actual_destination_volume(tmp_path, hub_repository, monkeypatch):
     hub = service(tmp_path)
     result = hub.inspect("owner/repository")

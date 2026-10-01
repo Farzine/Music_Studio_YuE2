@@ -11,6 +11,8 @@ node_modules/
 .next/
 out/
 *.tsbuildinfo
+apps/web/test-results/
+apps/web/playwright-report/
 
 # Local runtime state
 .env
