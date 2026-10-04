@@ -1,8 +1,60 @@
 # YuE2 Music Studio — implementation context
 
-Updated: 2026-10-01. Analysis baseline: `2af5461` (`feat: Implement model downloads feature with Hugging Face integration`).
+Updated: 2026-10-04. Analysis baseline: `2af5461` (`feat: Implement model downloads feature with Hugging Face integration`).
 
-## Current task and handoff
+## Current task and handoff — playable demo added (2026-10-04)
+
+- Added native audio controls to README and the visual guide, using the existing MP3 without autoplay. Download links remain available.
+- Added `docs/demo/index.html`: a standalone, dependency-free player that opens locally in a browser when a Markdown viewer hides audio controls. Reuses the existing audio; no duplicate media or new generation.
+- Verified actual playback in headless Chrome: duration 65.758667 seconds, playback time advances, no media error. Sandbox blocked Chrome startup; the required escalated check passed. HTML asset links and diff whitespace pass.
+- Modified: README.md, documentations.md, docs/demo/index.html, CONTEXT.md. No pending work or user input for this request.
+
+## Previous task — desktop visual documentation completed (2026-10-04)
+
+The user found the consolidated handbook too verbose and requested a screenshot-led workflow, desktop PNGs only, and removal of unnecessary files.
+
+- Replaced the long handbook with **287 lines** in [documentations.md](documentations.md): concise setup, illustrated hardware/download/model/create/listen/library/score/settings workflow, demo, troubleshooting and developer reference. All **29 desktop screenshots** appear inline, with secondary dialogs grouped in expandable sections. Use these images and brief instructions for future documentation updates; do not restore the long concatenated guide.
+- Shortened README to **62 lines** with quick start, workflow, demo and project map. Full endpoint schemas are available through the running API's `/docs` instead of duplicated Markdown tables.
+- Deleted **29 mobile PNGs**, reclaiming **5,236,014 bytes**. Filtered the capture manifest to desktop entries and changed `apps/web/scripts/capture-docs.cjs` to capture desktop only, including resume mode. Browser tests still cover mobile; only documentation captures changed.
+- Removed the root `.pytest_cache` directory. No empty documentation directories remained. The 14 superseded guides were already removed in the previous consolidation; `docs/` now holds assets and demo artifacts only. Retained README, this handoff and `tests/fixtures/README.md` (required fixture provenance), as well as workflow SVG/PNG, demo audio, model files, runtime environments and user data.
+- Modified this turn: `documentations.md`, `README.md`, `Makefile` comment, capture script, screenshot manifest, `CONTEXT.md`; removed mobile PNGs and pytest cache. Prior implementation changes remain uncommitted and preserved.
+- Validation: **61 local links/anchors resolve**, all 29 desktop images match the manifest and appear in the guide, no mobile PNGs or extra Markdown guides under docs, balanced code fences/details, Node script syntax and diff whitespace pass. No application/runtime change; GPU generation and application suites were not rerun.
+- No pending cleanup or user input. Known runtime limitations and earlier test evidence follow. Historical references below to 58 screenshots and old guide filenames describe earlier states; do not recreate those assets/files. Verify running services before assuming earlier sessions remain alive.
+
+## Previous task handoff — downloaded-model fixes and demo completed (2026-10-04)
+
+The approved plan to fix downloaded model/VAE usage, add repair/removal, document the app and generate a real demo is implemented. Initial working tree was clean. Changes remain uncommitted; no push/publication requested.
+
+### Fixes
+
+- Existing Q4 weights, bundled F16 VAE and sidecars were intact. Reproduced the missing CLI using the actual availability probe. Setup failed because nvcc was outside PATH. `scripts/setup_audiocpp.sh` now discovers /usr/local/cuda/bin/nvcc, checks tools, defaults to four build jobs and accepts CUDAARCHS. Built existing pinned v0.8.2 with CUDAARCHS=86 for the RTX A6000. The configured executable now exists; live API reports GGUF ready without changing model paths.
+- API integration and actual Create page confirm independent Model/VAE/GPU choices become valid when runtime is available. The exact choices reached the GPU worker and generated audio. No business rules moved into React, no API CUDA loading, no new dependency.
+- GET /models/{id}/repair-preview and POST /models/{id}/repair reuse measured persistent download jobs and retry/registry. New model_repairs.py checks pinned provenance, required and previously selected content, hashes, disk reserve, preview identity and task/worker/deletion protections. Staging hard-links verified files, downloads bad/missing content, validates the assembled package, then replaces individual files under exclusive lease and registers fresh validation. Hard interruption can leave a partially repaired package; another repair rechecks it. Healthy weights and registry identity are preserved.
+- Installed Models offers repair and confirmed Delete / Remove missing installation. Never-installed remote/default placeholders are excluded from installed cards. Download history links to current repair/deletion controls. Historical download rows remain after deletion and do not assert current readiness. Existing absent-directory deletion was verified rather than replaced.
+- Old idle worker 142126 had stale heartbeat and blocked on futex; SIGTERM did not finish. Checked no active generations, terminated only that worker and started a fresh local-gpu-1. Cause of this pre-existing hang was not established. Other GPU processes were untouched.
+
+### Real demo and docs
+
+- Project prj_0mutdwyl25tc08d8b: **City Lights, Open Sky**, original lyrics/style, seed 20261004. Model audio-cpp/Yue2-3B-GGUF at eb14a51700bf8baac825a690b2f3b24a01239f85, Q4_0 + bundled F16 VAE, GPU 0 / RTX A6000.
+- First 40-second ceiling: INCOMPLETE gen_0mutdwyl222h5ha9k. Version 2 with 90-second ceiling: COMPLETED gen_0mutdyx3q3w2zj73i, 65.7587 seconds, stereo 48 kHz, no warnings, 05:34:23–05:34:44 UTC. Actual FLAC, 192 kb/s MP3, lyrics/style, config, ABC and measured report/checksum in docs/demo/. Decoding, finite/non-silent samples and SHA256 checked; no subjective audio-quality certification claimed.
+- Post-generation live worker: idle, UNLOADED, no model/VAE device or GPU residency, no active subprocess. This is observed GGUF release, not certification of all native/vLLM failure paths.
+- README and existing setup/API/architecture/model/troubleshooting/testing docs updated. New visual guide covers 14 pages and 15 feature views, each desktop/mobile: 58 actual screenshots, no API fixtures; destructive dialogs cancelled. Capture manifest records routes/source. Workflow SVG and PNG in docs/assets/. Existing Playwright dependency powers apps/web/scripts/capture-docs.cjs with software Chrome rendering. Dialogs use viewport captures for readability.
+
+### Validation
+
+- Full API unit/integration: **435 passed, 2 optional skips**, existing Starlette/AnyIO warning (74.21 s). Final focused download/repair recheck: **28 passed**; focused API recovery/resources: **10 passed**.
+- Worker lifecycle/device/shutdown/commands: **49 passed** (6.92 s), mocked runtime. Sandbox async checks stall; use required escalation.
+- Browser: **30 passed** across desktop/mobile (51.6 s). Helpers: **2 passed**. Production build/types/lint, Python compile, shell/Node syntax, diff whitespace and local documentation link/capture existence checks pass.
+- Real GGUF demo completed; gallery inspected. Remote GitHub CI not run. No commit/push.
+
+### Running environment and remaining limits
+
+- Frontend http://127.0.0.1:3000, API http://127.0.0.1:8000, worker local-gpu-1 started for this task. Logs /tmp/yue2-live-{api,worker,web}.log. API launcher sets WORKER_SHUTDOWN_ON_API_EXIT=false for independent worker maintenance; project defaults unchanged. Verify liveness next turn rather than assume sessions persist.
+- Logs: /tmp/yue2-final-{backend,worker,browser,build}.log; /tmp/yue2-audiocpp-build.log; /tmp/yue2-{screenshots,extra-screenshots}.log.
+- No user input needed. Broader original scope limits: physical native/vLLM multi-GPU residency/rollback/shutdown smoke remains unmeasured; GGUF requires bundled F16 VAE; GGUF token budget may use labelled heuristics; optional ComfyUI needs a real configured workflow, not the test fixture. Repair needs pinned Hub provenance, managed storage and same-filesystem staging. Do not claim mocks or this demo resolve those limits.
+- Modified: scripts/setup_audiocpp.sh; API model_downloads/model_repairs services and models routes; web models page, model-repair/model-download-jobs components, types/client/browser tests and capture script; download/HF/task-resource Python tests; README; docs/api,architecture,model-setup,setup-linux,troubleshooting,testing,visual-guide; docs/assets; docs/demo; CONTEXT.md.
+
+## Prior Phase 7 handoff (historical)
 
 **Phases 1, 2A–2C, 3A–3B, 4A–4B, 5A–5C, 6A–6C and 7 are complete.** Shared registry/validation/deletion and atomic measured HF downloads preserve legacy paths and requests. The worker owns lifecycle, native Load/Unload, GPU switching/rollback, validation/VRAM checks and graceful shutdown with cancellation settlement, child reaping and explicit cleanup outcomes. Models has Installed Models, Download Model and Recommended Models views using backend facts and the existing download manager. Create/project Settings have independent Model/VAE/GPU controls; native VAE downloads register as decoders; Settings has a bounded API-host path browser. Backend and worker coverage plus 26 rendered desktop/mobile tests pass. The missing reference-workflow test now uses the original Git graph as a provenance-documented fixture. Phases 8–9 remain pending; the full enhancement definition of done has not been achieved.
 

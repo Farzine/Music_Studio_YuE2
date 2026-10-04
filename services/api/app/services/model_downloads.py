@@ -142,6 +142,33 @@ class ModelDownloads:
             self._write(job)
             return job
 
+    def repair_preview(self, registry_id: str) -> dict:
+        from app.services.model_repairs import repair_preview
+        return repair_preview(self, registry_id)
+
+    def repair(self, registry_id: str, confirmation_token: str) -> dict:
+        with file_lock(self.root / ".admission.lock"):
+            self._busy_check()
+            plan = self.repair_preview(registry_id)
+            if confirmation_token != plan["confirmation_token"]:
+                raise ConflictError("Installation changed. Refresh the repair preview before continuing.")
+            if not plan["can_repair"]:
+                raise ValidationError("Insufficient disk space for repair plus 1 GiB of headroom.")
+            now = utcnow().isoformat()
+            job = {"schema_version": 2, "id": new_id("mdl"), "repo_id": plan["repo_id"],
+                   "filename": plan["filename"], "revision": plan["revision"], "requested_revision": plan["revision"],
+                   "mode": "selected", "role": plan["role"], "destination": plan["destination"],
+                   "repair_registry_id": registry_id, "repair_files": [f["name"] for f in plan["repair_files"]],
+                   "files": [{**f, "downloaded_bytes": 0} for f in plan["files"]],
+                   "status": "queued", "error": None, "path": None, "registry_id": registry_id,
+                   "completed_files": 0, "total_files": len(plan["files"]), "current_file": None,
+                   "pid": os.getpid(), "hostname": socket.gethostname(), "process_start": _process_start(os.getpid()),
+                   "attempt": 1, "created_at": now, "updated_at": now, "bytes_per_second": None,
+                   "validation_status": "not_validated", "inference_status": "unknown",
+                   "force_download_files": [], "partial_bytes": 0}
+            self._write(job)
+            return job
+
     def get(self, download_id: str) -> dict:
         item = self._load(download_id)
         # v2 running jobs hold this lease through every write. A free lease can
@@ -246,12 +273,39 @@ class ModelDownloads:
         if identity and identity != "\n".join(sorted(f["name"] for f in job["files"])):
             raise ValidationError("Download selection changed; inspect the repository and start a new download.")
         destination = installation_path(self.settings, job["repo_id"], job["revision"], job["filename"], extra_identity=identity)
+        repair_id = job.get("repair_registry_id")
+        if repair_id:
+            record = self.registry.get(repair_id)
+            if (record.huggingface_repo, record.commit_hash or record.revision, record.filename, record.role) != (
+                    job["repo_id"], job["revision"], job["filename"], job["role"]):
+                raise ConflictError("The repair source no longer matches the registered installation.")
+            destination = Path(record.reference)
         if job.get("destination") != str(destination):
             raise ValidationError("Download destination no longer matches its original selection; inspect the repository and start a new download.")
         stage = self._stage(job)
         destination.parent.mkdir(parents=True, exist_ok=True)
         with model_file_leases(self.store, [str(destination)], shared=False, blocking=False):
-            root = destination if destination.exists() else stage
+            if repair_id:
+                from app.services.models import ModelService
+                blockers = ModelService(self.registry)._blockers(record)
+                if blockers:
+                    raise ConflictError("Cannot repair: " + " ".join(blockers))
+                self._check_tree(destination)
+                self._check_tree(stage)
+                stage.mkdir(parents=True, exist_ok=True)
+                # Reuse verified files by hard link on the same volume. SDK
+                # transfers never write these links; invalid files use staging.
+                for file in job["files"]:
+                    try:
+                        self._verify_file(destination, dict(file))
+                    except (ValidationError, OSError):
+                        continue
+                    target = stage / file["name"]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    if target.exists():
+                        target.unlink()
+                    os.link(destination / file["name"], target)
+            root = destination if destination.exists() and not repair_id else stage
             self._check_tree(root)
             allocated = sum(p.stat().st_blocks * 512 for p in root.rglob("*") if p.is_file()) if root.exists() else 0
             required = max(0, plan["known_bytes"] - allocated)
@@ -270,7 +324,14 @@ class ModelDownloads:
                 validate_source(job["repo_id"], file["name"])
                 job["current_file"] = file["name"]
                 self._write(job)
-                if root == stage:
+                reused = False
+                if repair_id and (stage / file["name"]).is_file():
+                    try:
+                        self._verify_file(stage, file)
+                        reused = True
+                    except ValidationError:
+                        (stage / file["name"]).unlink()
+                if root == stage and not reused:
                     stage.mkdir(parents=True, exist_ok=True)
                     last_time, last_bytes, last_write = time.monotonic(), None, 0.0
                     def progress(count, total):
@@ -328,6 +389,21 @@ class ModelDownloads:
             transition_download(job, "registering")
             job.update(validation_status=report.validation_status, current_file=None)
             self._write(job)
+            if repair_id and destination.exists():
+                # Publish only after the assembled package passed validation.
+                # A crash between replacements is recoverable by another repair;
+                # the exclusive lease prevents inference during publication.
+                for name in [*(f["name"] for f in job["files"]), "studio-model.json"]:
+                    target = destination / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    staged = stage / name
+                    if target.exists() and staged.samefile(target):
+                        staged.unlink()
+                    else:
+                        os.replace(staged, target)
+                entry = describe_model_files(str(destination), job["role"]).model_copy(update={"registry_id": repair_id})
+                report = validate_installation(entry, verify_checksum=True)
+                root = destination
             installed = self.registry.install_verified(str(destination), report, staging=stage if root == stage else None, role=entry.role)
             transition_download(job, "complete")
             job.update(path=str(destination), registry_id=installed.registry_id, validation_status=installed.validation_status,

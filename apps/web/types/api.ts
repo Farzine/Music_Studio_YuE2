@@ -736,3 +736,17 @@ export interface ApiError {
   stage?: string | null;
   details?: Record<string, unknown>;
 }
+
+export interface ModelRepairPreview {
+  registry_id: string;
+  repo_id: string;
+  revision: string;
+  filename: string;
+  destination: string;
+  repair_files: { name: string; bytes: number | null }[];
+  download_bytes: number | null;
+  free_bytes: number;
+  safety_margin_bytes: number;
+  can_repair: boolean;
+  confirmation_token: string;
+}

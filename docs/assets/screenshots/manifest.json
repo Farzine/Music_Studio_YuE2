@@ -1,0 +1,182 @@
+{
+  "captured_at": "2026-10-04T09:59:35.840Z",
+  "generation": "gen_0mutdyx3q3w2zj73i",
+  "project": "prj_0mutdwyl25tc08d8b",
+  "source": "Live application and real API; no response fixtures",
+  "captures": [
+    {
+      "name": "dashboard",
+      "device": "desktop",
+      "url": "/",
+      "file": "dashboard-desktop.png"
+    },
+    {
+      "name": "create",
+      "device": "desktop",
+      "url": "/create?from=gen_0mutdyx3q3w2zj73i",
+      "file": "create-desktop.png"
+    },
+    {
+      "name": "library",
+      "device": "desktop",
+      "url": "/library",
+      "file": "library-desktop.png"
+    },
+    {
+      "name": "projects",
+      "device": "desktop",
+      "url": "/projects",
+      "file": "projects-desktop.png"
+    },
+    {
+      "name": "project",
+      "device": "desktop",
+      "url": "/projects/prj_0mutdwyl25tc08d8b",
+      "file": "project-desktop.png"
+    },
+    {
+      "name": "project-settings",
+      "device": "desktop",
+      "url": "/projects/prj_0mutdwyl25tc08d8b/settings",
+      "file": "project-settings-desktop.png"
+    },
+    {
+      "name": "generation",
+      "device": "desktop",
+      "url": "/generations/gen_0mutdyx3q3w2zj73i",
+      "file": "generation-desktop.png"
+    },
+    {
+      "name": "score",
+      "device": "desktop",
+      "url": "/scores/gen_0mutdyx3q3w2zj73i",
+      "file": "score-desktop.png"
+    },
+    {
+      "name": "download",
+      "device": "desktop",
+      "url": "/models/download",
+      "file": "download-desktop.png"
+    },
+    {
+      "name": "recommendations",
+      "device": "desktop",
+      "url": "/models/recommended",
+      "file": "recommendations-desktop.png"
+    },
+    {
+      "name": "system",
+      "device": "desktop",
+      "url": "/system",
+      "file": "system-desktop.png"
+    },
+    {
+      "name": "settings",
+      "device": "desktop",
+      "url": "/settings",
+      "file": "settings-desktop.png"
+    },
+    {
+      "name": "about",
+      "device": "desktop",
+      "url": "/about",
+      "file": "about-desktop.png"
+    },
+    {
+      "name": "audio-download",
+      "device": "desktop",
+      "url": "/generations/gen_0mutdyx3q3w2zj73i",
+      "file": "audio-download-desktop.png"
+    },
+    {
+      "name": "audio-player",
+      "device": "desktop",
+      "url": "/generations/gen_0mutdyx3q3w2zj73i",
+      "file": "audio-player-desktop.png"
+    },
+    {
+      "name": "file-browser",
+      "device": "desktop",
+      "url": "/settings",
+      "file": "file-browser-desktop.png"
+    },
+    {
+      "name": "models",
+      "device": "desktop",
+      "url": "/models",
+      "file": "models-desktop.png"
+    },
+    {
+      "name": "model-inspection",
+      "device": "desktop",
+      "url": "/models",
+      "file": "model-inspection-desktop.png"
+    },
+    {
+      "name": "model-delete-confirmation",
+      "device": "desktop",
+      "url": "/models",
+      "file": "model-delete-confirmation-desktop.png"
+    },
+    {
+      "name": "model-repair",
+      "device": "desktop",
+      "url": "/models",
+      "file": "model-repair-desktop.png"
+    },
+    {
+      "name": "repository-inspection",
+      "device": "desktop",
+      "url": "/models/download?repo=audio-cpp%2FYue2-3B-GGUF&revision=eb14a51700bf8baac825a690b2f3b24a01239f85&file=yue2-3b-q4_0.gguf",
+      "file": "repository-inspection-desktop.png"
+    },
+    {
+      "name": "download-preview",
+      "device": "desktop",
+      "url": "/models/download?repo=audio-cpp%2FYue2-3B-GGUF&revision=eb14a51700bf8baac825a690b2f3b24a01239f85&file=yue2-3b-q4_0.gguf",
+      "file": "download-preview-desktop.png"
+    },
+    {
+      "name": "advanced-settings",
+      "device": "desktop",
+      "url": "/create?from=gen_0mutdyx3q3w2zj73i",
+      "file": "advanced-settings-desktop.png"
+    },
+    {
+      "name": "save-preset",
+      "device": "desktop",
+      "url": "/create?from=gen_0mutdyx3q3w2zj73i",
+      "file": "save-preset-desktop.png"
+    },
+    {
+      "name": "score-validation",
+      "device": "desktop",
+      "url": "/scores/gen_0mutdyx3q3w2zj73i",
+      "file": "score-validation-desktop.png"
+    },
+    {
+      "name": "score-comparison",
+      "device": "desktop",
+      "url": "/scores/gen_0mutdyx3q3w2zj73i",
+      "file": "score-comparison-desktop.png"
+    },
+    {
+      "name": "library-scores",
+      "device": "desktop",
+      "url": "/library",
+      "file": "library-scores-desktop.png"
+    },
+    {
+      "name": "generation-delete-confirmation",
+      "device": "desktop",
+      "url": "/generations/gen_0mutdyx3q3w2zj73i",
+      "file": "generation-delete-confirmation-desktop.png"
+    },
+    {
+      "name": "generation-incomplete",
+      "device": "desktop",
+      "url": "/generations/gen_0mutdwyl222h5ha9k",
+      "file": "generation-incomplete-desktop.png"
+    }
+  ]
+}

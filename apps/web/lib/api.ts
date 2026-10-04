@@ -15,6 +15,7 @@ import type {
   ModelEntry,
   ModelInspection,
   ModelDeletionPreview,
+  ModelRepairPreview,
   ModelRuntimeCommand,
   TaskOptions,
   LocalPathListing,
@@ -84,6 +85,10 @@ export const api = {
   inspectModel: (id: string) => request<ModelInspection>(`/api/v1/models/${encodeURIComponent(id)}`),
   validateModel: (id: string, verifyChecksum = false) => request<{ validation: Record<string, unknown> }>(`/api/v1/models/${encodeURIComponent(id)}/validate`, {
     method: "POST", body: JSON.stringify({ verify_checksum: verifyChecksum }),
+  }),
+  modelRepairPreview: (id: string) => request<ModelRepairPreview>(`/api/v1/models/${encodeURIComponent(id)}/repair-preview`),
+  repairModel: (id: string, confirmation_token: string) => request<ModelDownload>(`/api/v1/models/${encodeURIComponent(id)}/repair`, {
+    method: "POST", body: JSON.stringify({ confirmation_token }),
   }),
   modelDeletionPreview: (id: string) => request<ModelDeletionPreview>(`/api/v1/models/${encodeURIComponent(id)}/deletion-preview`),
   deleteModel: (id: string, preview: ModelDeletionPreview) => request<{ complete: boolean }>(`/api/v1/models/${encodeURIComponent(id)}`, {

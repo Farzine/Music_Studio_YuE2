@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>City Lights, Open Sky — YuE2 Music Studio</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #080e15; color: #e5edf4; }
+    main { max-width: 40rem; margin: 12vh auto; padding: 1.5rem; }
+    h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.1; }
+    p { line-height: 1.6; color: #b6c5d3; }
+    .studio, a { color: #36cbd9; }
+    audio { display: block; width: 100%; margin: 2rem 0; }
+    nav { display: flex; flex-wrap: wrap; gap: 1rem; }
+    a:focus-visible { outline: 2px solid #36cbd9; outline-offset: 4px; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="studio">YuE2 Music Studio · Original audio demo</p>
+    <h1>City Lights, Open Sky</h1>
+    <p>Warm indie pop, acoustic guitar and an uplifting chorus. Generated locally with YuE2 Q4_0 and its bundled F16 VAE.</p>
+    <audio controls preload="metadata" aria-label="Play City Lights, Open Sky" src="city-lights-open-sky.mp3">
+      <a href="city-lights-open-sky.mp3">Download the MP3</a>
+    </audio>
+    <p>65.76 seconds · Stereo, 48 kHz · Generated 4 October 2026</p>
+    <nav aria-label="Demo downloads">
+      <a href="city-lights-open-sky.mp3" download>Download MP3</a>
+      <a href="city-lights-open-sky.flac" download>Lossless FLAC</a>
+      <a href="lyrics.txt">Lyrics</a>
+      <a href="style.txt">Style</a>
+      <a href="config.json">Settings</a>
+      <a href="report.json">Generation report</a>
+    </nav>
+    <p>Model: YuE2 by Multimodal Art Projection · Quantized package: audio-cpp · Model weights: CC BY-NC 4.0.</p>
+  </main>
+</body>
+</html>

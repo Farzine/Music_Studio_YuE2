@@ -111,3 +111,24 @@ def test_standalone_gguf_vae_preview_is_rejected(api_client, download_package):
     candidate["model"].update(role="vae", format="gguf")
     with pytest.raises(ValidationError, match="bundled F16"):
         downloads.hub.preview(download_package.inspection, "custom.gguf")
+
+
+def test_gguf_model_and_bundled_vae_become_selectable_when_cli_installed(runtime_worker, api_client, monkeypatch, download_package):
+    import shutil
+    from yue2_studio_core.store import write_json_atomic
+    visible_gpu(monkeypatch)
+    root = runtime_worker.settings.models_path / "downloaded-gguf"
+    shutil.copytree(download_package.source, root)
+    write_json_atomic(root / "studio-model.json", {"filename": "custom.gguf"})
+    available = False
+    monkeypatch.setattr("app.services.capabilities.audiocpp_available", lambda settings: available)
+    # Hardware assessment uses the same live availability input.
+    monkeypatch.setattr("app.services.system_info.audiocpp_available", lambda settings: available)
+    config = {"model": {"checkpoint": str(root), "vae": str(root / GGUF_COMPANIONS[0]), "device_index": 0}}
+    first = api_client.post("/api/v1/generation/options", json=config).json()
+    assert not next(m for m in first["models"] if m["value"] == str(root))["enabled"]
+    available = True
+    second = api_client.post("/api/v1/generation/options", json=config).json()
+    assert next(m for m in second["models"] if m["value"] == str(root))["enabled"]
+    assert next(v for v in second["vaes"] if v["value"] == config["model"]["vae"])["enabled"]
+    assert second["valid"], second["issues"]

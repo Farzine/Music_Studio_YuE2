@@ -71,7 +71,7 @@ export function ModelDownloadJobs() {
               <Badge tone={model?.inference_ready && !models.error ? "accent" : "neutral"}>Inference: {models.error ? "Unknown" : model?.inference_status.replaceAll("_", " ") ?? "Needs current inventory check"}</Badge></div>
             {model?.problem && !models.error ? <p className="text-xs text-[var(--color-warn)]">{model.problem}</p> : null}
             <div className="flex flex-wrap gap-2">{model?.role === "model" && model.inference_ready && !models.error ? <Button size="sm" variant="primary" asChild><Link href={`/create?model=${encodeURIComponent(model.id)}`}>Use Model</Link></Button> : null}
-              <Button size="sm" asChild><Link href="/models">Inspect installed models</Link></Button></div>
+              <Button size="sm" asChild><Link href={model?.registry_id ? `/models#${model.registry_id}` : "/models"}>Repair or delete installation</Link></Button></div>
             {item.path ? <p className="break-all font-mono text-xs text-[var(--color-ink-faint)]">{item.path}</p> : null}
           </div> : null}
         </article>;

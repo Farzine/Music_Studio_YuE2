@@ -82,3 +82,26 @@ def test_gpu_assessments_are_read_only_and_pinned_preview_keeps_exact_content(ap
     assert discovery["items"][0]["device_index"] == 1
     assert store_provider().device_index() == before
     assert api_client.get("/api/v1/models/downloads").json() == {"items": []}
+
+
+def test_completed_package_repair_and_delete_missing_installation(api_client, download_package):
+    from pathlib import Path
+    import shutil
+    reply = api_client.post("/api/v1/models/downloads", json={"repo_id": "owner/repository", "filename": "custom.gguf"})
+    job = api_client.get(f'/api/v1/models/downloads/{reply.json()["id"]}').json()
+    registry_id = job["registry_id"]
+    root = Path(job["path"])
+    (root / "yue2-vae-f16.gguf").unlink()
+    preview = api_client.get(f"/api/v1/models/{registry_id}/repair-preview")
+    assert preview.status_code == 200, preview.text
+    repaired = api_client.post(f"/api/v1/models/{registry_id}/repair", json={"confirmation_token": preview.json()["confirmation_token"]})
+    assert repaired.status_code == 202, repaired.text
+    assert api_client.get(f'/api/v1/models/downloads/{repaired.json()["id"]}').json()["status"] == "complete"
+    assert (root / "yue2-vae-f16.gguf").exists()
+    shutil.rmtree(root)
+    deletion = api_client.get(f"/api/v1/models/{registry_id}/deletion-preview").json()
+    assert deletion["can_delete"] and deletion["estimated_reclaimed_bytes"] == 0
+    response = api_client.request("DELETE", f"/api/v1/models/{registry_id}", json={
+        "confirmation_token": deletion["confirmation_token"], "confirmed_path": deletion["path"]})
+    assert response.status_code == 200 and response.json()["complete"]
+    assert not any(m["registry_id"] == registry_id for m in api_client.get("/api/v1/models").json()["items"])

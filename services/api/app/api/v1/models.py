@@ -37,6 +37,23 @@ class PreviewHubRequest(InspectHubRequest):
     selected_files: list[str] | None = None
 
 
+class RepairRequest(BaseModel):
+    confirmation_token: str
+
+
+@router.get("/models/{registry_id}/repair-preview")
+def repair_preview(registry_id: str, downloads: ModelDownloads = Depends(model_downloads_provider)) -> dict:
+    return downloads.repair_preview(registry_id)
+
+
+@router.post("/models/{registry_id}/repair", status_code=202)
+def repair_model(registry_id: str, payload: RepairRequest, background: BackgroundTasks,
+                 downloads: ModelDownloads = Depends(model_downloads_provider)) -> dict:
+    job = downloads.repair(registry_id, payload.confirmation_token)
+    background.add_task(downloads.run, job["id"])
+    return job
+
+
 def _assess_inspection(inspection: dict, system: SystemInfoService, capabilities: CapabilityService,
                        device_index: int | None) -> dict:
     contexts = inspection.pop("candidate_contexts")

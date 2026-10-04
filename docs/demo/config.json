@@ -1,0 +1,26 @@
+{
+  "model": {
+    "checkpoint": "/mnt/lab/farzine/Music_Studio_YuE2/models/hub/audio-cpp--Yue2-3B-GGUF--c9b7db1eb092",
+    "vae": "/mnt/lab/farzine/Music_Studio_YuE2/models/hub/audio-cpp--Yue2-3B-GGUF--c9b7db1eb092/yue2-vae-f16.gguf",
+    "device_index": 0,
+    "compute_backend": "torch",
+    "quantization": "none",
+    "offload_ar": false
+  },
+  "prompt": {
+    "mode": "full",
+    "lyrics": "[Verse]\nMorning paints the window gold\nI leave the rain and take the road\nEvery step a spark of light\nEvery turn an open sky\n\n[Chorus]\nCity lights, carry me home\nThrough the dark, I'm not alone\nRaise your voice and let it fly\nWe are stars in an open sky",
+    "style": "Warm indie pop, 100 BPM, bright acoustic guitar, soft electric piano, rounded bass, steady brushed drums, intimate clear lead vocal, uplifting chorus with gentle harmonies, clean spacious studio mix, short complete song."
+  },
+  "sampling": {
+    "seed": 20261004,
+    "max_duration_seconds": 90,
+    "fit_to_plan": false
+  },
+  "planner": {
+    "max_tokens": 2048
+  },
+  "output": {
+    "format": "flac"
+  }
+}

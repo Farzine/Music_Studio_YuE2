@@ -1,5 +1,5 @@
 # YuE2 Music Studio — local development.
-# Every target has a plain-command equivalent documented in docs/setup-linux.md.
+# Setup and workflow: documentations.md. Run make help to list targets.
 
 SHELL := /bin/bash
 ROOT  := $(shell pwd)

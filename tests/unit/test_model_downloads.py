@@ -355,3 +355,83 @@ def test_unknown_file_sizes_are_observed_not_guessed(tmp_path, download_package)
     result = downloads.get(job["id"])
     assert result["status"] == "complete" and result["total_bytes"] == result["downloaded_bytes"]
     assert result["total_bytes"] > 0
+
+
+def test_repair_completed_installation_fetches_only_missing_vae(tmp_path, download_package):
+    downloads = manager(tmp_path)
+    job = downloads.start("owner/repository", "custom.gguf", "main")
+    downloads.run(job["id"])
+    installed = downloads.get(job["id"])
+    root = Path(installed["path"])
+    weight_inode = (root / "custom.gguf").stat().st_ino
+    (root / "yue2-vae-f16.gguf").unlink()
+    preview = downloads.repair_preview(installed["registry_id"])
+    assert [f["name"] for f in preview["repair_files"]] == ["yue2-vae-f16.gguf"]
+    download_package.calls.clear()
+    repair = downloads.repair(installed["registry_id"], preview["confirmation_token"])
+    downloads.run(repair["id"])
+    result = downloads.get(repair["id"])
+    assert result["status"] == "complete", result
+    assert result["registry_id"] == installed["registry_id"]
+    assert [name for name, _, _ in download_package.calls] == ["yue2-vae-f16.gguf"]
+    assert (root / "custom.gguf").stat().st_ino == weight_inode
+    assert next(m for m in downloads.registry.inventory() if m.registry_id == installed["registry_id"]).inference_ready
+
+
+@pytest.mark.parametrize("damage", ["corrupt", "directory", "metadata"])
+def test_repair_restores_damaged_installation(tmp_path, download_package, damage):
+    import shutil
+    downloads = manager(tmp_path)
+    job = downloads.start("owner/repository", "custom.gguf", None)
+    downloads.run(job["id"])
+    installed = downloads.get(job["id"])
+    root = Path(installed["path"])
+    if damage == "directory":
+        shutil.rmtree(root)
+    elif damage == "metadata":
+        (root / "studio-model.json").unlink()
+    else:
+        (root / "custom.gguf").write_bytes(b"corrupted")
+    preview = downloads.repair_preview(installed["registry_id"])
+    repair = downloads.repair(installed["registry_id"], preview["confirmation_token"])
+    downloads.run(repair["id"])
+    result = downloads.get(repair["id"])
+    assert result["status"] == "complete", result
+    assert (root / "custom.gguf").read_bytes() == (download_package.source / "custom.gguf").read_bytes()
+    assert next(m for m in downloads.registry.inventory() if m.registry_id == installed["registry_id"]).inference_ready
+
+
+def test_repair_rejects_stale_preview_and_busy_model(tmp_path, download_package):
+    downloads = manager(tmp_path)
+    job = downloads.start("owner/repository", "custom.gguf", None)
+    downloads.run(job["id"])
+    installed = downloads.get(job["id"])
+    preview = downloads.repair_preview(installed["registry_id"])
+    (Path(installed["path"]) / "yue2-vae-f16.gguf").unlink()
+    with pytest.raises(ConflictError, match="changed"):
+        downloads.repair(installed["registry_id"], preview["confirmation_token"])
+    with model_file_leases(downloads.store, [installed["path"]]):
+        with pytest.raises(ConflictError, match="repair"):
+            downloads.repair_preview(installed["registry_id"])
+
+
+def test_failed_repair_preserves_weights_and_can_retry(tmp_path, download_package, monkeypatch):
+    downloads = manager(tmp_path)
+    job = downloads.start("owner/repository", "custom.gguf", None)
+    downloads.run(job["id"])
+    installed = downloads.get(job["id"])
+    root = Path(installed["path"])
+    before = (root / "custom.gguf").read_bytes()
+    (root / "yue2-vae-f16.gguf").unlink()
+    preview = downloads.repair_preview(installed["registry_id"])
+    repair = downloads.repair(installed["registry_id"], preview["confirmation_token"])
+    def fail(*args, **kwargs):
+        raise OSError("offline")
+    monkeypatch.setattr("app.services.model_downloads.download_file", fail)
+    downloads.run(repair["id"])
+    assert downloads.get(repair["id"])["status"] == "failed"
+    assert (root / "custom.gguf").read_bytes() == before
+    monkeypatch.setattr("app.services.model_downloads.download_file", download_package.transfer)
+    downloads.retry(repair["id"])
+    downloads.run(repair["id"])
+    assert downloads.get(repair["id"])["status"] == "complete"

@@ -5,6 +5,7 @@ import { HardDrive, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
+import { ModelRepair } from "@/components/settings/model-repair";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,7 +79,7 @@ export default function InstalledModelsPage() {
       await refresh();
     });
   };
-  const items = inventory.data?.items.filter((model) => role === "all" || model.role === role) ?? [];
+  const items = inventory.data?.items.filter((model) => (model.is_local || model.registration_status === "registered") && (role === "all" || model.role === role)) ?? [];
   const inspectedModel = inspection.data?.model;
 
   return <div className="space-y-5">
@@ -111,7 +112,7 @@ export default function InstalledModelsPage() {
     {inventory.isLoading ? <Skeleton className="h-72 w-full" /> : items.length === 0 && !inventory.error ?
       <EmptyState icon={<HardDrive className="h-6 w-6" />} title="No models in this view" description="Download a compatible model or check configured local model paths in Settings." action={<Button asChild variant="surface"><Link href="/models/download">Open downloads</Link></Button>} /> : null}
     <div className="grid gap-4 xl:grid-cols-2">
-      {items.map((model) => <Card key={model.registry_id ?? model.id} className="min-w-0">
+      {items.map((model) => <Card id={model.registry_id ?? undefined} key={model.registry_id ?? model.id} className="min-w-0">
         <CardHeader><div className="flex flex-wrap items-center gap-2"><CardTitle className="break-all">{model.label}</CardTitle><Badge>{model.role === "vae" ? "VAE" : "Inference model"}</Badge></div>
           <CardDescription className="break-all">{model.huggingface_repo ?? "Local installation"}</CardDescription></CardHeader>
         <CardContent className="space-y-4">
@@ -137,8 +138,10 @@ export default function InstalledModelsPage() {
             {model.role === "model" ? (["load", "unload"] as const).map((operation) => <Button key={operation} size="sm" variant="surface"
               disabled={busy || !model.runtime_actions?.[operation].allowed} title={model.runtime_actions?.[operation].reason ?? undefined}
               onClick={() => requestAction(model, operation)}>{operation === "load" ? "Load" : "Unload"}</Button>) : null}
-            <Button size="sm" variant="danger" disabled={busy || !model.registry_id} onClick={() => previewDelete(model)}>Delete</Button>
+            <Button size="sm" variant="danger" disabled={busy || !model.registry_id} onClick={() => previewDelete(model)}>{model.is_local ? "Delete" : "Remove missing installation"}</Button>
           </div>
+          {model.huggingface_repo && model.registry_id ? <ModelRepair model={model} /> : null}
+          {model.inference_status === "runtime_unavailable" ? <p className="text-xs">Install the GGUF runtime on the API/worker host with <code>make install-audiocpp</code>, then refresh. See <Link href="/system" className="underline">System runtime status</Link>.</p> : null}
           {model.runtime_actions?.load.reason ? <p className="text-xs text-[var(--color-ink-faint)]">{model.runtime_actions.load.reason}</p> : null}
           {model.role === "vae" ? <p className="text-xs text-[var(--color-ink-faint)]">Select this VAE independently in a task. The worker manages its resources with the inference model.</p> : null}
         </CardContent>

@@ -296,3 +296,37 @@ test("project settings preserve resource choices and a failed save never navigat
   await expectNoOverflow(page);
   studio.assertHealthy();
 });
+
+test("installed model repair previews missing files and queues measured recovery", async ({ page }) => {
+  const studio = await mockStudio(page);
+  studio.responses["/models"] = { items: [{ ...model, huggingface_repo: "owner/repository", files_complete: false,
+    inference_ready: false, inference_status: "files_missing", problem: "Missing bundled VAE" }] };
+  studio.responses[`/models/${model.registry_id}/repair-preview`] = {
+    registry_id: model.registry_id, repo_id: "owner/repository", revision: "a".repeat(40), filename: "model.safetensors",
+    destination: model.path, repair_files: [{ name: "vae.gguf", bytes: 1024 }], download_bytes: 1024,
+    free_bytes: 8192, safety_margin_bytes: 1024, can_repair: true, confirmation_token: "repair-token",
+  };
+  studio.responses[`/models/${model.registry_id}/repair`] = { id: "mdl_repair", status: "queued" };
+  await page.goto("/models");
+  await page.getByRole("button", { name: "Repair installation" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/vae.gguf/)).toBeVisible();
+  await expectNoOverflow(page);
+  await dialog.getByRole("button", { name: "Repair and validate" }).click();
+  await expect(page.getByRole("link", { name: "Repair queued — view progress" })).toBeVisible();
+  expect(studio.requests.find((r) => r.path.endsWith("/repair") && r.method === "POST")?.body).toEqual({ confirmation_token: "repair-token" });
+  studio.assertHealthy();
+});
+
+test("missing registered installs can be removed while uninstalled defaults are not installed cards", async ({ page }) => {
+  const studio = await mockStudio(page);
+  studio.responses["/models"] = { items: [
+    { ...model, is_local: false, inference_ready: false, download_status: "missing", inference_status: "files_missing" },
+    { ...model, id: "remote/optional-vae", registry_id: null, label: "Never installed optional VAE", is_local: false,
+      registration_status: "discovered", inference_ready: false, download_status: "missing" },
+  ] };
+  await page.goto("/models");
+  await expect(page.getByRole("button", { name: "Remove missing installation" })).toBeEnabled();
+  await expect(page.getByText("Never installed optional VAE")).toHaveCount(0);
+  studio.assertHealthy();
+});
