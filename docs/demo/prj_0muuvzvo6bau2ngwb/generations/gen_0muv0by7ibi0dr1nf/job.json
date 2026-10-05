@@ -1,0 +1,288 @@
+{
+  "id": "gen_0muv0by7ibi0dr1nf",
+  "project_id": "prj_0muuvzvo6bau2ngwb",
+  "version": 6,
+  "parent_generation_id": "gen_0muuztnc0cn9zxbv1",
+  "status": "COMPLETED",
+  "priority": 0,
+  "queue_position": null,
+  "worker_id": "local-gpu-1",
+  "title": "Mehedi Rifat song",
+  "config": {
+    "model": {
+      "checkpoint": "/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-3B",
+      "revision": null,
+      "vae": "standard",
+      "vae_revision": null,
+      "device_index": 0,
+      "compute_backend": "torch",
+      "quantization": "none",
+      "offload_ar": false,
+      "memory_budget_gib": 40.0,
+      "local_files_only": true
+    },
+    "prompt": {
+      "style": "Gentle Bengali storytelling song with warm male vocals. Sing slowly and clearly at around 75–80 BPM, with accurate standard Bangladeshi Bengali pronunciation. No rap, no rushing, no slurred words. Use natural pauses between lines and give longer lyrics extra time instead of speeding up.\nKeep the music soft and simple: acoustic guitar, light piano, bass, and gentle drums. Verses should feel conversational and humorous, chorus slightly fuller but still controlled. Pronounce Bengali and Bengali-written English words clearly. Prioritize diction, clarity, and storytelling over speed or vocal tricks.",
+      "lyrics": "[Intro]\nদুনিয়ায় কিছু মানুষ আসে ইতিহাস গড়তে,\nকেউ আসে পৃথিবী বদলাতে, কেউ আসে স্বপ্ন ধরতে।\nআর কিছু মানুষ আসে\nচায়ের দোকানে বসে পৃথিবী কীভাবে বদলানো উচিত, সেটা বলতে।\nআজকের গল্প দুই মহাপুরুষের।\nলেডিস অ্যান্ড জেন্টলম্যান...\nমিট মেহেদী and রিফাত।\nএকজন কাজ শুরুর আগেই বলে “হবে না ভাই।”\nআরেকজন কাজ শুরু না করেই বলে\n“ভাই, বিলিয়ন ডলারের আইডিয়া!”\n[Verse]\nসকালবেলা মেহেদী ওঠে, মুখে শোকের ছায়া,\nদিনটা শুরুই হয়নি; শেষ হয়ে গেছে মায়া।\nবললাম, “ভাই, একটা project ট্রাই করে দেখি?”\nমেহেদী বলে, “লাভ নাই ভাই, সামনে বিপদ দেখি।”\nআইডিয়া বললে রিস্ক দেখে, প্ল্যান বললেই লস,\nসুযোগ দরজায় আসলে বলে “হবে না বস!”\nইন্টারভিউয়ের আগেই ভাবে রিজেকশন আসবে,\nচেষ্টা করার আগেই প্রজেক্ট আন্ডারগ্রাউন্ড,\nমেহেদীর নেগেটিভিটি ডলবি সারাউন্ড!\nমেহেদী, তুমি পেসিমিস্ট না ভাই...\nতুমি ফেইলিউরের অ্যাডভান্স বুকিং সিস্টেম।\n[Verse]\nএবার আসেন রিফাত ভাই, ভিশনারি ম্যান,\nপ্রতি শুক্রবার স্টার্টআপ, প্রতি শনিবার প্ল্যান।\nরবিবার ভ্যালুয়েশন হান্ড্রেড মিলিয়ন,\nসোমবার সকাল আসলেই, সিইও সাহেব লস্ট!\nরোডম্যাপ আছে, হোয়াইটবোর্ডে চার্ট,\nপিচ ডেক রেডি; প্রজেক্ট হয়নি স্টার্ট।\nমনে মনে ফাউন্ডার অ্যান্ড সিইও,\nকোম্পানি নাই, প্রোডাক্ট নাই, এমপ্লয়ি জিরো।\nরাত তিনটায় ওয়ার্ল্ড ডমিনেশন কল,\nপরদিন বলি, “কাজ কই?”\n—“ভাই... ভাবতেছি ওভারঅল।”\n[Pre-Chorus]\nএকজন—“হবে না ভাই!”\nআরেকজন—“হবে... কিন্তু আজকে না!”\nএকজন অ্যাকশনের আগে ডিপ্রেশন,\nআরেকজন অ্যাকশন ছাড়াই প্রেজেন্টেশন!\n[Chorus]\nসো, ফাক ইউ মেহেদী!\nঅ্যান্ড ফাক ইউ রিফাত!\nএকজন ওয়াকিং ডিপ্রেশন,\nআরেকজন পাওয়ারপয়েন্টের সম্রাট!\nফাক ইউ মেহেদী!\nand ফাক ইউ রিফাত!\n[Verse]\nএকদিন দুজন বলল, “ভাই, বিজনেস করা যাক!”\nআমি ভাবলাম; মিরাকল দেখা যাক!\nরিফাত বলে—\n“আচ্ছা... আগে লোগো বানাই।”\nছয় ঘণ্টা লোগো মিটিং হলো ভাই,\nকোম্পানির নাম পনেরোটা—প্রোডাক্ট একটাও নাই!\n[Bridge]\nকখনো ভাবি, বেশি রোস্ট করছি নাকি?\nমেহেদী মেসেজ দেয়—\n“ভাই, মনে হয় আমাদের কিছু হবে না।”\nরিফাত মেসেজ দেয়—\n“ব্রো, নতুন একটা আইডিয়া আসছে। হিউজ পোটেনশিয়াল।”\nআমি বলি—“আগেরটা?”\nসিন।\nনো রিপ্লাই।\n[Chorus]\nফাক ইউ মেহেদী!\nফাক ইউ রিফাত!\nএকজন ট্র্যাজেডি আগে লেখে,\nআরেকজন স্টার্টআপ বানায় মিডনাইট চ্যাট!\nমেহেদীর কাছে হোপ গেলে\nহোপই ডিপ্রেশন নিয়ে ফেরে!\nরিফাতের কাছে কাজ দিলে\nডেডলাইন আত্মগোপন করে!\nতোমরা দুইজন বন্ধু না—\nপ্রোডাক্টিভিটির কো-অর্ডিনেটেড অ্যাটাক!\n[Outro]\nতবুও তোরা আমার ভাই,\nএই কারণেই এত কথা।\nমেহেদী—\nএকদিন অন্তত কাজ শুরু করার পরে হতাশ হইস।\nরিফাত—\nআইডিয়া বলার আগে অন্তত একটা ফোল্ডার বানাইস।\nএকজন একটু অপটিমিস্টিক হ।\nআরেকজন... বিছানা থেকে ওঠ।\n[দুই সেকেন্ড নীরবতা]\nরিফাত:\n“ভাই... নতুন একটা স্টার্টআপ আইডিয়া আছে—”\nন্যারেটর:\n“চুপ কর, বাল।”\n[গিটার: টুং...]\n[END]",
+      "abc": "",
+      "mode": "full",
+      "reference_upload_id": null
+    },
+    "planner": {
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "top_k": 30,
+      "repetition_penalty": 1.005,
+      "penalty_window": 100,
+      "min_tokens": 32,
+      "max_tokens": 4096,
+      "seed": null
+    },
+    "sampling": {
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 100,
+      "repetition_penalty": 1.2,
+      "penalty_window": 50,
+      "min_tokens": 200,
+      "max_tokens": 15000,
+      "seed": 831001,
+      "control_after_generate": "fixed",
+      "max_duration_seconds": 600.0,
+      "max_tokens_override": null,
+      "fit_to_plan": true
+    },
+    "synthesis": {
+      "cfg_scale": null,
+      "ode_steps": 32,
+      "ode_method": "midpoint",
+      "sampler_name": null,
+      "scheduler": null,
+      "denoise": null,
+      "seconds": null,
+      "batch_size": null
+    },
+    "decoder": {
+      "mode": "tiled",
+      "tile_frames": 1024,
+      "halo_frames": 16
+    },
+    "output": {
+      "format": "flac",
+      "fade_out_incomplete_ms": 250,
+      "filename_prefix": "YuE2",
+      "keep_canonical": true
+    }
+  },
+  "progress": {
+    "stage": "post_processing",
+    "label": "Saving artifacts",
+    "completed": 0,
+    "total": null,
+    "unit": null,
+    "percent": null,
+    "rate_per_second": null,
+    "updated_at": "2026-10-05T08:51:23.540985Z"
+  },
+  "timing": {
+    "queue_wait_seconds": 0.006548,
+    "model_load_seconds": 0.003,
+    "planning_seconds": 29.471,
+    "semantic_seconds": 100.615,
+    "synthesis_seconds": 55.965,
+    "decode_seconds": 8.265,
+    "post_processing_seconds": 0.667,
+    "total_seconds": 195.005,
+    "gpu_peak_bytes": 9965739520,
+    "output_seconds": 365.8786666666667
+  },
+  "artifacts": [
+    {
+      "kind": "audio",
+      "path": "projects/prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/audio/final.flac",
+      "bytes": 69764759,
+      "sha256": "858aa9d681807d483ae316fb2ab0981b65fa78d40bb0f3a816095527b8725c91",
+      "content_type": "audio/flac",
+      "duration_seconds": 365.8786666666667,
+      "sample_rate": 48000,
+      "channels": 2
+    },
+    {
+      "kind": "score",
+      "path": "projects/prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/score/source.abc",
+      "bytes": 3724,
+      "sha256": "6fab4d184abe883bb3c5cee1e8ae1d643cd680c44fe61997e12f08607858bcf9",
+      "content_type": "text/vnd.abc",
+      "duration_seconds": null,
+      "sample_rate": null,
+      "channels": null
+    },
+    {
+      "kind": "latent",
+      "path": "projects/prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/intermediates/latent.npy",
+      "bytes": 2341760,
+      "sha256": "e4c82821e287e604f2d5ab90a108df532f85cb938b3a1af2bdf10ee7db8f6aa0",
+      "content_type": "application/octet-stream",
+      "duration_seconds": null,
+      "sample_rate": null,
+      "channels": null
+    },
+    {
+      "kind": "semantic",
+      "path": "projects/prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/intermediates/semantic.npy",
+      "bytes": 36716,
+      "sha256": "f4c2fb5f146f315be0abcdca16343ea6ba602176bd5158ce3348d35c26778920",
+      "content_type": "application/octet-stream",
+      "duration_seconds": null,
+      "sample_rate": null,
+      "channels": null
+    },
+    {
+      "kind": "config",
+      "path": "projects/prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/request.json",
+      "bytes": 8192,
+      "sha256": "e88a090b26e23b34817a28a3c0cb96d83f43b38f62fb9c8a92494a0c42001bc1",
+      "content_type": "application/json",
+      "duration_seconds": null,
+      "sample_rate": null,
+      "channels": null
+    },
+    {
+      "kind": "config",
+      "path": "projects/prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/effective_config.json",
+      "bytes": 3670,
+      "sha256": "fee751bbe39c8febc9999d063ae99b2f3d08a72d5d6faab39f700b4052df68fe",
+      "content_type": "application/json",
+      "duration_seconds": null,
+      "sample_rate": null,
+      "channels": null
+    },
+    {
+      "kind": "manifest",
+      "path": "projects/prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/manifest.json",
+      "bytes": 21532,
+      "sha256": "be08140addb5a72a8543b792d51f5450d275482ca9923dbe4fa00524872628e9",
+      "content_type": "application/json",
+      "duration_seconds": null,
+      "sample_rate": null,
+      "channels": null
+    }
+  ],
+  "warnings": [],
+  "truncated": {
+    "abc": false,
+    "semantic": false
+  },
+  "budget": {
+    "request": {
+      "stage": "request",
+      "risk": "SAFE",
+      "exact_tokenisation": true,
+      "tokenisation_note": null,
+      "context_tokens": 24576,
+      "input_context_tokens": 2537,
+      "prefix_breakdown": {
+        "document": 1,
+        "instruction_style_lyrics": 2533,
+        "markers": 3,
+        "score": 0
+      },
+      "plan_reserve_tokens": 4096,
+      "reserved_tokens": 8,
+      "safety_margin_tokens": 256,
+      "available_generation_tokens": 17679,
+      "requested_tokens": 15000,
+      "requested_seconds": 600.0,
+      "max_safe_tokens": 17679,
+      "max_safe_seconds": 707.16,
+      "planned_seconds": null,
+      "planned_tokens": null,
+      "kv_cache_bytes": 2011283456,
+      "cfg_branches": 1,
+      "supports_continuation": false,
+      "supports_chunked_generation": false,
+      "reasons": [
+        "4,096 tokens are held back for the score the planner has not written yet; the exact figure is recalculated once it has.",
+        "The style and lyrics occupy 2,533 tokens of the 24,576-token window, about 101 s of song."
+      ],
+      "remedies": [
+        "Shorten the lyrics; every token they use is one the song cannot."
+      ],
+      "excess_tokens": 0
+    },
+    "plan": {
+      "stage": "plan",
+      "risk": "SAFE",
+      "exact_tokenisation": true,
+      "tokenisation_note": null,
+      "context_tokens": 24576,
+      "input_context_tokens": 5559,
+      "prefix_breakdown": {
+        "document": 1,
+        "instruction_style_lyrics": 2533,
+        "markers": 3,
+        "score": 3022
+      },
+      "plan_reserve_tokens": 0,
+      "reserved_tokens": 8,
+      "safety_margin_tokens": 256,
+      "available_generation_tokens": 18753,
+      "requested_tokens": 15000,
+      "requested_seconds": 600.0,
+      "max_safe_tokens": 18753,
+      "max_safe_seconds": 750.12,
+      "planned_seconds": 368.67469879518075,
+      "planned_tokens": 10600,
+      "kv_cache_bytes": 2357870592,
+      "cfg_branches": 1,
+      "supports_continuation": false,
+      "supports_chunked_generation": false,
+      "reasons": [
+        "The style and lyrics occupy 2,533 tokens of the 24,576-token window, about 101 s of song."
+      ],
+      "remedies": [
+        "Shorten the lyrics; every token they use is one the song cannot."
+      ],
+      "excess_tokens": 0,
+      "effective_tokens": 15000,
+      "effective_seconds": 600.0
+    },
+    "limits": {
+      "model_id": "m-a-p/YuE2-3B",
+      "protocol": "yue2-native-v1",
+      "context_tokens": 24576,
+      "latent_frame_rate": 25,
+      "reserved_tokens": 8,
+      "safety_margin_tokens": 256,
+      "warning_threshold": 0.85,
+      "plan_length_tolerance": 1.15,
+      "supports_continuation": false,
+      "supports_chunked_generation": false,
+      "capability_note": "yue2-infer 0.1.6 exposes plan/generate_semantic/synthesize/decode and no continuation, resume or audio-prefix entry point. A song is produced in one autoregressive pass, so the context window is a hard ceiling on its length and cannot be extended by chunking.",
+      "kv_cache_bytes_per_token": 114688,
+      "sources": {
+        "context_tokens": "/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-3B/config.json:max_position_embeddings",
+        "latent_frame_rate": "/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-Vae/config.json:sample_rate/downsampling_ratio",
+        "kv_cache_bytes_per_token": "/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-3B/config.json"
+      }
+    },
+    "semantic": {
+      "budget_tokens": 15000,
+      "tokens_generated": 9147,
+      "termination_reason": "EOS"
+    }
+  },
+  "termination_reason": "EOS",
+  "effective_adjustments": [],
+  "request_identity": "7b78877a496ffbc0b5fd8bea437687ce6df30b2817a1ca4bce38014e527b901e",
+  "error_code": null,
+  "error_message": null,
+  "error_guidance": null,
+  "cancel_requested": false,
+  "favorite": false,
+  "requested_at": "2026-10-05T08:48:09.201488Z",
+  "started_at": "2026-10-05T08:48:09.208045Z",
+  "finished_at": "2026-10-05T08:51:24.214972Z",
+  "failed_at": null,
+  "updated_at": "2026-10-05T08:51:24.217257Z"
+}

@@ -32,7 +32,7 @@ import type {
 /** Same-origin in the browser (Next rewrites proxy to FastAPI); absolute on the server. */
 const BASE =
   typeof window === "undefined"
-    ? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
+    ? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8045"
     : "";
 
 export class ApiRequestError extends Error {

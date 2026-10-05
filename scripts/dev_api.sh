@@ -10,4 +10,4 @@ for argument in "$@"; do
   fi
 done
 exec "$ROOT/.venv-api/bin/python" -m uvicorn app.main:app \
-  --host "${BACKEND_HOST:-127.0.0.1}" --port "${BACKEND_PORT:-8000}" "$@"
+  --host "${BACKEND_HOST:-127.0.0.1}" --port "${BACKEND_PORT:-8045}" "$@"

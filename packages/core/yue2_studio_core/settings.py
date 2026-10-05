@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
 
     backend_host: str = "127.0.0.1"
-    backend_port: int = 8000
+    backend_port: int = 8045
     frontend_url: str = "http://127.0.0.1:3000"
 
     yue2_model_path: str = "./models/YuE2-3B"

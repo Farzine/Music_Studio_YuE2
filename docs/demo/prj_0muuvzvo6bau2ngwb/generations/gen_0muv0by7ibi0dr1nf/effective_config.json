@@ -1,0 +1,117 @@
+{
+  "generation": {
+    "abc": {
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "top_k": 30,
+      "repetition_penalty": 1.005,
+      "penalty_window": 100,
+      "min_tokens": 32,
+      "max_tokens": 4096
+    },
+    "semantic": {
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 100,
+      "repetition_penalty": 1.2,
+      "penalty_window": 50,
+      "min_tokens": 200,
+      "max_tokens": 15000
+    },
+    "ode_steps": 32,
+    "ode_method": "midpoint",
+    "context": 24576,
+    "version": "yue2-native-v1"
+  },
+  "overrides": {
+    "semantic": {
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 100,
+      "repetition_penalty": 1.2,
+      "penalty_window": 50,
+      "min_tokens": 200,
+      "max_tokens": 15000
+    }
+  },
+  "cot": "full",
+  "cfg_scale": 1.0,
+  "cfg_negative": "same_instruction_and_exact_abc",
+  "backend": "torch",
+  "quantization": "none",
+  "model_dtype": "bfloat16",
+  "vae_dtype": "float32",
+  "vae_decode": "halo_crop",
+  "vae_core_frames": 1024,
+  "vae_halo_frames": 16,
+  "device": "cuda:0",
+  "memory_budget_gib": 40.0,
+  "offload_ar": false,
+  "runtime_sha256": "17963197ec6c7a87f7519cda132ad70c9843acecf65eeb0d58e41506a744b3ed",
+  "decoder_release": "standard",
+  "validation_status": "unvalidated",
+  "token_budget": {
+    "plan": {
+      "stage": "plan",
+      "risk": "SAFE",
+      "exact_tokenisation": true,
+      "tokenisation_note": null,
+      "context_tokens": 24576,
+      "input_context_tokens": 5559,
+      "prefix_breakdown": {
+        "document": 1,
+        "instruction_style_lyrics": 2533,
+        "markers": 3,
+        "score": 3022
+      },
+      "plan_reserve_tokens": 0,
+      "reserved_tokens": 8,
+      "safety_margin_tokens": 256,
+      "available_generation_tokens": 18753,
+      "requested_tokens": 15000,
+      "requested_seconds": 600.0,
+      "max_safe_tokens": 18753,
+      "max_safe_seconds": 750.12,
+      "planned_seconds": 368.67469879518075,
+      "planned_tokens": 10600,
+      "kv_cache_bytes": 2357870592,
+      "cfg_branches": 1,
+      "supports_continuation": false,
+      "supports_chunked_generation": false,
+      "reasons": [
+        "The style and lyrics occupy 2,533 tokens of the 24,576-token window, about 101 s of song."
+      ],
+      "remedies": [
+        "Shorten the lyrics; every token they use is one the song cannot."
+      ],
+      "excess_tokens": 0,
+      "effective_tokens": 15000,
+      "effective_seconds": 600.0
+    },
+    "limits": {
+      "model_id": "m-a-p/YuE2-3B",
+      "protocol": "yue2-native-v1",
+      "context_tokens": 24576,
+      "latent_frame_rate": 25,
+      "reserved_tokens": 8,
+      "safety_margin_tokens": 256,
+      "warning_threshold": 0.85,
+      "plan_length_tolerance": 1.15,
+      "supports_continuation": false,
+      "supports_chunked_generation": false,
+      "capability_note": "yue2-infer 0.1.6 exposes plan/generate_semantic/synthesize/decode and no continuation, resume or audio-prefix entry point. A song is produced in one autoregressive pass, so the context window is a hard ceiling on its length and cannot be extended by chunking.",
+      "kv_cache_bytes_per_token": 114688,
+      "sources": {
+        "context_tokens": "/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-3B/config.json:max_position_embeddings",
+        "latent_frame_rate": "/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-Vae/config.json:sample_rate/downsampling_ratio",
+        "kv_cache_bytes_per_token": "/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-3B/config.json"
+      }
+    },
+    "semantic": {
+      "budget_tokens": 15000,
+      "tokens_generated": 9147,
+      "termination_reason": "EOS"
+    }
+  },
+  "termination_reason": "EOS"
+}

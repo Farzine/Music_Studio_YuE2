@@ -1,39 +1,343 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>City Lights, Open Sky — YuE2 Music Studio</title>
-  <style>
-    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
-    body { margin: 0; background: #080e15; color: #e5edf4; }
-    main { max-width: 40rem; margin: 12vh auto; padding: 1.5rem; }
-    h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.1; }
-    p { line-height: 1.6; color: #b6c5d3; }
-    .studio, a { color: #36cbd9; }
-    audio { display: block; width: 100%; margin: 2rem 0; }
-    nav { display: flex; flex-wrap: wrap; gap: 1rem; }
-    a:focus-visible { outline: 2px solid #36cbd9; outline-offset: 4px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mehedi Rifat song — YuE2 Music Studio</title>
+<style>
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #080e15; color: #e5edf4; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 58rem; margin: 5vh auto; padding: clamp(1rem, 4vw, 2.5rem); }
+.hero, details { border: 1px solid #293541; border-radius: 1rem; padding: clamp(1rem, 4vw, 2rem); background: #101923; margin-bottom: 1.25rem; }
+h1 { font-size: clamp(2rem, 6vw, 3.5rem); line-height: 1.1; margin: 1rem 0; }
+h2 { font-size: 1.25rem; margin-top: 2rem; }
+p { line-height: 1.7; color: #b8c8d5; }
+.eyebrow, a { color: #48d0de; }
+.badges, nav { display: flex; flex-wrap: wrap; gap: .65rem 1rem; }
+.badges span { padding: .4rem .7rem; background: #1b2a36; border-radius: 2rem; font-size: .85rem; }
+audio { display: block; width: 100%; margin: 1.5rem 0; }
+summary { cursor: pointer; font-size: 1.1rem; font-weight: 650; }
+summary:focus-visible, a:focus-visible { outline: 2px solid #48d0de; outline-offset: 5px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.85; background: #080e15; padding: 1rem; border-radius: .5rem; }
+.json { font: .85rem/1.6 ui-monospace, monospace; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: .75rem .4rem; border-bottom: 1px solid #293541; vertical-align: top; overflow-wrap: anywhere; }
+th { width: 34%; color: #b8c8d5; font-weight: 500; }
+footer { font-size: .85rem; margin: 2rem 0; }
+</style>
 </head>
-<body>
-  <main>
-    <p class="studio">YuE2 Music Studio · Original audio demo</p>
-    <h1>City Lights, Open Sky</h1>
-    <p>Warm indie pop, acoustic guitar and an uplifting chorus. Generated locally with YuE2 Q4_0 and its bundled F16 VAE.</p>
-    <audio controls preload="metadata" aria-label="Play City Lights, Open Sky" src="city-lights-open-sky.mp3">
-      <a href="city-lights-open-sky.mp3">Download the MP3</a>
-    </audio>
-    <p>65.76 seconds · Stereo, 48 kHz · Generated 4 October 2026</p>
-    <nav aria-label="Demo downloads">
-      <a href="city-lights-open-sky.mp3" download>Download MP3</a>
-      <a href="city-lights-open-sky.flac" download>Lossless FLAC</a>
-      <a href="lyrics.txt">Lyrics</a>
-      <a href="style.txt">Style</a>
-      <a href="config.json">Settings</a>
-      <a href="report.json">Generation report</a>
-    </nav>
-    <p>Model: YuE2 by Multimodal Art Projection · Quantized package: audio-cpp · Model weights: CC BY-NC 4.0.</p>
-  </main>
-</body>
+<body><main>
+<section class="hero" aria-labelledby="title">
+<p class="eyebrow">YuE2 Music Studio / Featured project</p>
+<h1 id="title">Mehedi Rifat song</h1>
+<p>Bengali storytelling with warm male vocals, acoustic guitar, light piano and gentle drums. The style prompt asks for clear diction and conversational, humorous verses.</p>
+<div class="badges"><span>6:05.88</span><span>Native YuE2 · BF16</span><span>48 kHz stereo</span><span>Version 6 · Completed</span></div>
+<audio controls preload="metadata" aria-label="Play Mehedi Rifat song" src="mehedi-rifat.mp3"><a href="mehedi-rifat.mp3">Download MP3</a></audio>
+<p>Generated 5 October 2026. The MP3 is a listening copy of the original lossless FLAC.</p>
+</section>
+<details id="details">
+<summary>View lyrics, style &amp; generation settings</summary>
+<p>These are the saved inputs for this generation; project defaults may differ.</p>
+<h2>Style prompt</h2>
+<pre>Gentle Bengali storytelling song with warm male vocals. Sing slowly and clearly at around 75–80 BPM, with accurate standard Bangladeshi Bengali pronunciation. No rap, no rushing, no slurred words. Use natural pauses between lines and give longer lyrics extra time instead of speeding up.
+Keep the music soft and simple: acoustic guitar, light piano, bass, and gentle drums. Verses should feel conversational and humorous, chorus slightly fuller but still controlled. Pronounce Bengali and Bengali-written English words clearly. Prioritize diction, clarity, and storytelling over speed or vocal tricks.</pre>
+<h2>Lyrics</h2>
+<pre lang="bn">[Intro]
+দুনিয়ায় কিছু মানুষ আসে ইতিহাস গড়তে,
+কেউ আসে পৃথিবী বদলাতে, কেউ আসে স্বপ্ন ধরতে।
+আর কিছু মানুষ আসে
+চায়ের দোকানে বসে পৃথিবী কীভাবে বদলানো উচিত, সেটা বলতে।
+আজকের গল্প দুই মহাপুরুষের।
+লেডিস অ্যান্ড জেন্টলম্যান...
+মিট মেহেদী and রিফাত।
+একজন কাজ শুরুর আগেই বলে “হবে না ভাই।”
+আরেকজন কাজ শুরু না করেই বলে
+“ভাই, বিলিয়ন ডলারের আইডিয়া!”
+[Verse]
+সকালবেলা মেহেদী ওঠে, মুখে শোকের ছায়া,
+দিনটা শুরুই হয়নি; শেষ হয়ে গেছে মায়া।
+বললাম, “ভাই, একটা project ট্রাই করে দেখি?”
+মেহেদী বলে, “লাভ নাই ভাই, সামনে বিপদ দেখি।”
+আইডিয়া বললে রিস্ক দেখে, প্ল্যান বললেই লস,
+সুযোগ দরজায় আসলে বলে “হবে না বস!”
+ইন্টারভিউয়ের আগেই ভাবে রিজেকশন আসবে,
+চেষ্টা করার আগেই প্রজেক্ট আন্ডারগ্রাউন্ড,
+মেহেদীর নেগেটিভিটি ডলবি সারাউন্ড!
+মেহেদী, তুমি পেসিমিস্ট না ভাই...
+তুমি ফেইলিউরের অ্যাডভান্স বুকিং সিস্টেম।
+[Verse]
+এবার আসেন রিফাত ভাই, ভিশনারি ম্যান,
+প্রতি শুক্রবার স্টার্টআপ, প্রতি শনিবার প্ল্যান।
+রবিবার ভ্যালুয়েশন হান্ড্রেড মিলিয়ন,
+সোমবার সকাল আসলেই, সিইও সাহেব লস্ট!
+রোডম্যাপ আছে, হোয়াইটবোর্ডে চার্ট,
+পিচ ডেক রেডি; প্রজেক্ট হয়নি স্টার্ট।
+মনে মনে ফাউন্ডার অ্যান্ড সিইও,
+কোম্পানি নাই, প্রোডাক্ট নাই, এমপ্লয়ি জিরো।
+রাত তিনটায় ওয়ার্ল্ড ডমিনেশন কল,
+পরদিন বলি, “কাজ কই?”
+—“ভাই... ভাবতেছি ওভারঅল।”
+[Pre-Chorus]
+একজন—“হবে না ভাই!”
+আরেকজন—“হবে... কিন্তু আজকে না!”
+একজন অ্যাকশনের আগে ডিপ্রেশন,
+আরেকজন অ্যাকশন ছাড়াই প্রেজেন্টেশন!
+[Chorus]
+সো, ফাক ইউ মেহেদী!
+অ্যান্ড ফাক ইউ রিফাত!
+একজন ওয়াকিং ডিপ্রেশন,
+আরেকজন পাওয়ারপয়েন্টের সম্রাট!
+ফাক ইউ মেহেদী!
+and ফাক ইউ রিফাত!
+[Verse]
+একদিন দুজন বলল, “ভাই, বিজনেস করা যাক!”
+আমি ভাবলাম; মিরাকল দেখা যাক!
+রিফাত বলে—
+“আচ্ছা... আগে লোগো বানাই।”
+ছয় ঘণ্টা লোগো মিটিং হলো ভাই,
+কোম্পানির নাম পনেরোটা—প্রোডাক্ট একটাও নাই!
+[Bridge]
+কখনো ভাবি, বেশি রোস্ট করছি নাকি?
+মেহেদী মেসেজ দেয়—
+“ভাই, মনে হয় আমাদের কিছু হবে না।”
+রিফাত মেসেজ দেয়—
+“ব্রো, নতুন একটা আইডিয়া আসছে। হিউজ পোটেনশিয়াল।”
+আমি বলি—“আগেরটা?”
+সিন।
+নো রিপ্লাই।
+[Chorus]
+ফাক ইউ মেহেদী!
+ফাক ইউ রিফাত!
+একজন ট্র্যাজেডি আগে লেখে,
+আরেকজন স্টার্টআপ বানায় মিডনাইট চ্যাট!
+মেহেদীর কাছে হোপ গেলে
+হোপই ডিপ্রেশন নিয়ে ফেরে!
+রিফাতের কাছে কাজ দিলে
+ডেডলাইন আত্মগোপন করে!
+তোমরা দুইজন বন্ধু না—
+প্রোডাক্টিভিটির কো-অর্ডিনেটেড অ্যাটাক!
+[Outro]
+তবুও তোরা আমার ভাই,
+এই কারণেই এত কথা।
+মেহেদী—
+একদিন অন্তত কাজ শুরু করার পরে হতাশ হইস।
+রিফাত—
+আইডিয়া বলার আগে অন্তত একটা ফোল্ডার বানাইস।
+একজন একটু অপটিমিস্টিক হ।
+আরেকজন... বিছানা থেকে ওঠ।
+[দুই সেকেন্ড নীরবতা]
+রিফাত:
+“ভাই... নতুন একটা স্টার্টআপ আইডিয়া আছে—”
+ন্যারেটর:
+“চুপ কর, বাল।”
+[গিটার: টুং...]
+[END]</pre>
+<h2>Generation settings</h2>
+<table><tbody><tr><th scope="row">Version</th><td>6 · Completed</td></tr>
+<tr><th scope="row">Audio</th><td>6:05.88 · stereo · 48 kHz</td></tr>
+<tr><th scope="row">Model</th><td>YuE2-3B · native PyTorch · BF16</td></tr>
+<tr><th scope="row">VAE</th><td>Standard YuE2 VAE · FP32</td></tr>
+<tr><th scope="row">Device</th><td>cuda:0</td></tr>
+<tr><th scope="row">Mode</th><td>Full Song</td></tr>
+<tr><th scope="row">Seed</th><td>831001</td></tr>
+<tr><th scope="row">Duration ceiling</th><td>600 seconds · fit to plan enabled</td></tr>
+<tr><th scope="row">Planning</th><td>Temperature 0.7 · top-p 0.9 · top-k 30 · max 4,096 tokens</td></tr>
+<tr><th scope="row">Audio sampling</th><td>Temperature 1.0 · top-p 0.95 · top-k 100 · max 15,000 tokens</td></tr>
+<tr><th scope="row">Synthesis</th><td>32 ODE steps · midpoint · effective CFG 1.0</td></tr>
+<tr><th scope="row">Decoder</th><td>Tiled · 1,024 core frames · 16 halo frames</td></tr>
+<tr><th scope="row">Memory budget</th><td>40 GiB · AR offload disabled</td></tr>
+<tr><th scope="row">Measured generation time</th><td>195.005 seconds</td></tr>
+<tr><th scope="row">Recorded finish</th><td>2026-10-05T08:51:24.214972+00:00</td></tr>
+</tbody></table>
+<p>The 600-second limit was a ceiling; the model reached its own ending after 365.88 seconds. Model paths in the records refer to the original machine.</p>
+<details><summary>All requested settings</summary><pre class="json">{
+  &quot;model&quot;: {
+    &quot;checkpoint&quot;: &quot;/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-3B&quot;,
+    &quot;revision&quot;: null,
+    &quot;vae&quot;: &quot;standard&quot;,
+    &quot;vae_revision&quot;: null,
+    &quot;device_index&quot;: 0,
+    &quot;compute_backend&quot;: &quot;torch&quot;,
+    &quot;quantization&quot;: &quot;none&quot;,
+    &quot;offload_ar&quot;: false,
+    &quot;memory_budget_gib&quot;: 40.0,
+    &quot;local_files_only&quot;: true
+  },
+  &quot;planner&quot;: {
+    &quot;temperature&quot;: 0.7,
+    &quot;top_p&quot;: 0.9,
+    &quot;top_k&quot;: 30,
+    &quot;repetition_penalty&quot;: 1.005,
+    &quot;penalty_window&quot;: 100,
+    &quot;min_tokens&quot;: 32,
+    &quot;max_tokens&quot;: 4096,
+    &quot;seed&quot;: null
+  },
+  &quot;sampling&quot;: {
+    &quot;temperature&quot;: 1.0,
+    &quot;top_p&quot;: 0.95,
+    &quot;top_k&quot;: 100,
+    &quot;repetition_penalty&quot;: 1.2,
+    &quot;penalty_window&quot;: 50,
+    &quot;min_tokens&quot;: 200,
+    &quot;max_tokens&quot;: 15000,
+    &quot;seed&quot;: 831001,
+    &quot;control_after_generate&quot;: &quot;fixed&quot;,
+    &quot;max_duration_seconds&quot;: 600.0,
+    &quot;max_tokens_override&quot;: null,
+    &quot;fit_to_plan&quot;: true
+  },
+  &quot;synthesis&quot;: {
+    &quot;cfg_scale&quot;: null,
+    &quot;ode_steps&quot;: 32,
+    &quot;ode_method&quot;: &quot;midpoint&quot;,
+    &quot;sampler_name&quot;: null,
+    &quot;scheduler&quot;: null,
+    &quot;denoise&quot;: null,
+    &quot;seconds&quot;: null,
+    &quot;batch_size&quot;: null
+  },
+  &quot;decoder&quot;: {
+    &quot;mode&quot;: &quot;tiled&quot;,
+    &quot;tile_frames&quot;: 1024,
+    &quot;halo_frames&quot;: 16
+  },
+  &quot;output&quot;: {
+    &quot;format&quot;: &quot;flac&quot;,
+    &quot;fade_out_incomplete_ms&quot;: 250,
+    &quot;filename_prefix&quot;: &quot;YuE2&quot;,
+    &quot;keep_canonical&quot;: true
+  },
+  &quot;mode&quot;: &quot;full&quot;
+}</pre></details>
+<details><summary>Effective runtime settings and token budget</summary><pre class="json">{
+  &quot;generation&quot;: {
+    &quot;abc&quot;: {
+      &quot;temperature&quot;: 0.7,
+      &quot;top_p&quot;: 0.9,
+      &quot;top_k&quot;: 30,
+      &quot;repetition_penalty&quot;: 1.005,
+      &quot;penalty_window&quot;: 100,
+      &quot;min_tokens&quot;: 32,
+      &quot;max_tokens&quot;: 4096
+    },
+    &quot;semantic&quot;: {
+      &quot;temperature&quot;: 1.0,
+      &quot;top_p&quot;: 0.95,
+      &quot;top_k&quot;: 100,
+      &quot;repetition_penalty&quot;: 1.2,
+      &quot;penalty_window&quot;: 50,
+      &quot;min_tokens&quot;: 200,
+      &quot;max_tokens&quot;: 15000
+    },
+    &quot;ode_steps&quot;: 32,
+    &quot;ode_method&quot;: &quot;midpoint&quot;,
+    &quot;context&quot;: 24576,
+    &quot;version&quot;: &quot;yue2-native-v1&quot;
+  },
+  &quot;overrides&quot;: {
+    &quot;semantic&quot;: {
+      &quot;temperature&quot;: 1.0,
+      &quot;top_p&quot;: 0.95,
+      &quot;top_k&quot;: 100,
+      &quot;repetition_penalty&quot;: 1.2,
+      &quot;penalty_window&quot;: 50,
+      &quot;min_tokens&quot;: 200,
+      &quot;max_tokens&quot;: 15000
+    }
+  },
+  &quot;cot&quot;: &quot;full&quot;,
+  &quot;cfg_scale&quot;: 1.0,
+  &quot;cfg_negative&quot;: &quot;same_instruction_and_exact_abc&quot;,
+  &quot;backend&quot;: &quot;torch&quot;,
+  &quot;quantization&quot;: &quot;none&quot;,
+  &quot;model_dtype&quot;: &quot;bfloat16&quot;,
+  &quot;vae_dtype&quot;: &quot;float32&quot;,
+  &quot;vae_decode&quot;: &quot;halo_crop&quot;,
+  &quot;vae_core_frames&quot;: 1024,
+  &quot;vae_halo_frames&quot;: 16,
+  &quot;device&quot;: &quot;cuda:0&quot;,
+  &quot;memory_budget_gib&quot;: 40.0,
+  &quot;offload_ar&quot;: false,
+  &quot;runtime_sha256&quot;: &quot;17963197ec6c7a87f7519cda132ad70c9843acecf65eeb0d58e41506a744b3ed&quot;,
+  &quot;decoder_release&quot;: &quot;standard&quot;,
+  &quot;validation_status&quot;: &quot;unvalidated&quot;,
+  &quot;token_budget&quot;: {
+    &quot;plan&quot;: {
+      &quot;stage&quot;: &quot;plan&quot;,
+      &quot;risk&quot;: &quot;SAFE&quot;,
+      &quot;exact_tokenisation&quot;: true,
+      &quot;tokenisation_note&quot;: null,
+      &quot;context_tokens&quot;: 24576,
+      &quot;input_context_tokens&quot;: 5559,
+      &quot;prefix_breakdown&quot;: {
+        &quot;document&quot;: 1,
+        &quot;instruction_style_lyrics&quot;: 2533,
+        &quot;markers&quot;: 3,
+        &quot;score&quot;: 3022
+      },
+      &quot;plan_reserve_tokens&quot;: 0,
+      &quot;reserved_tokens&quot;: 8,
+      &quot;safety_margin_tokens&quot;: 256,
+      &quot;available_generation_tokens&quot;: 18753,
+      &quot;requested_tokens&quot;: 15000,
+      &quot;requested_seconds&quot;: 600.0,
+      &quot;max_safe_tokens&quot;: 18753,
+      &quot;max_safe_seconds&quot;: 750.12,
+      &quot;planned_seconds&quot;: 368.67469879518075,
+      &quot;planned_tokens&quot;: 10600,
+      &quot;kv_cache_bytes&quot;: 2357870592,
+      &quot;cfg_branches&quot;: 1,
+      &quot;supports_continuation&quot;: false,
+      &quot;supports_chunked_generation&quot;: false,
+      &quot;reasons&quot;: [
+        &quot;The style and lyrics occupy 2,533 tokens of the 24,576-token window, about 101 s of song.&quot;
+      ],
+      &quot;remedies&quot;: [
+        &quot;Shorten the lyrics; every token they use is one the song cannot.&quot;
+      ],
+      &quot;excess_tokens&quot;: 0,
+      &quot;effective_tokens&quot;: 15000,
+      &quot;effective_seconds&quot;: 600.0
+    },
+    &quot;limits&quot;: {
+      &quot;model_id&quot;: &quot;m-a-p/YuE2-3B&quot;,
+      &quot;protocol&quot;: &quot;yue2-native-v1&quot;,
+      &quot;context_tokens&quot;: 24576,
+      &quot;latent_frame_rate&quot;: 25,
+      &quot;reserved_tokens&quot;: 8,
+      &quot;safety_margin_tokens&quot;: 256,
+      &quot;warning_threshold&quot;: 0.85,
+      &quot;plan_length_tolerance&quot;: 1.15,
+      &quot;supports_continuation&quot;: false,
+      &quot;supports_chunked_generation&quot;: false,
+      &quot;capability_note&quot;: &quot;yue2-infer 0.1.6 exposes plan/generate_semantic/synthesize/decode and no continuation, resume or audio-prefix entry point. A song is produced in one autoregressive pass, so the context window is a hard ceiling on its length and cannot be extended by chunking.&quot;,
+      &quot;kv_cache_bytes_per_token&quot;: 114688,
+      &quot;sources&quot;: {
+        &quot;context_tokens&quot;: &quot;/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-3B/config.json:max_position_embeddings&quot;,
+        &quot;latent_frame_rate&quot;: &quot;/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-Vae/config.json:sample_rate/downsampling_ratio&quot;,
+        &quot;kv_cache_bytes_per_token&quot;: &quot;/mnt/lab/farzine/Music_Studio_YuE2/models/YuE2-3B/config.json&quot;
+      }
+    },
+    &quot;semantic&quot;: {
+      &quot;budget_tokens&quot;: 15000,
+      &quot;tokens_generated&quot;: 9147,
+      &quot;termination_reason&quot;: &quot;EOS&quot;
+    }
+  },
+  &quot;termination_reason&quot;: &quot;EOS&quot;
+}</pre></details>
+</details>
+<section aria-labelledby="downloads"><h2 id="downloads">Audio &amp; project records</h2><nav aria-label="Demo files"><a href="mehedi-rifat.mp3">MP3</a>
+<a href="prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/audio/final.flac">Original FLAC</a>
+<a href="lyrics.txt">Lyrics</a>
+<a href="style.txt">Style</a>
+<a href="prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/request.json">Request JSON</a>
+<a href="prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/effective_config.json">Effective settings</a>
+<a href="prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/manifest.json">Generation manifest</a>
+<a href="prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/score/source.abc">ABC score</a>
+<a href="prj_0muuvzvo6bau2ngwb/project.json">Project snapshot</a></nav></section>
+<footer><p>Project: prj_0muuvzvo6bau2ngwb<br>Generation: gen_0muv0by7ibi0dr1nf</p><p>YuE2 model weights: CC BY-NC 4.0. Runtime and dependency licenses remain separate.</p></footer>
+</main></body>
 </html>

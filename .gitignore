@@ -35,3 +35,7 @@ runs/
 *.tsbuildinfo
 
 *.agents/
+
+# Preserve the featured demo project snapshot, including its generation log.
+!docs/demo/prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/logs/
+!docs/demo/prj_0muuvzvo6bau2ngwb/generations/gen_0muv0by7ibi0dr1nf/logs/generation.log

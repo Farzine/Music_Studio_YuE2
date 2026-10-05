@@ -1,8 +1,20 @@
 # YuE2 Music Studio — implementation context
 
-Updated: 2026-10-04. Analysis baseline: `2af5461` (`feat: Implement model downloads feature with Hugging Face integration`).
+Updated: 2026-10-05. Analysis baseline: `2af5461` (`feat: Implement model downloads feature with Hugging Face integration`).
 
-## Current task and handoff — playable demo added (2026-10-04)
+## Current task and handoff — API port and featured project demo completed (2026-10-05)
+
+- User clarified **API port 8080**, frontend remains **3000**. Updated shared Settings default, dev API launcher, Next HTTP/WebSocket proxy fallback, server-side API client fallback, `.env.example` and README. Existing local `.env` already has API 8080; it was not changed. Explicit process environment overrides remain supported.
+- Current repository state differs from previous handoff: the user consolidated the visual guide into README and removed documentations.md. Preserved that structure; repository was clean at task start.
+- Copied all **11 files**, byte-for-byte, from `data/projects/prj_0muuvzvo6bau2ngwb/` to `docs/demo/prj_0muuvzvo6bau2ngwb/`. Source remains unchanged. Includes original FLAC, request/effective settings, manifest, job, score, generation log and NumPy intermediates. Narrow `.gitignore` exceptions retain the copied generation log.
+- Featured song: **Mehedi Rifat song**, version 6, generation `gen_0muv0by7ibi0dr1nf`, COMPLETED with EOS on 2026-10-05. Duration **365.878667 s**, stereo 48 kHz; native YuE2 BF16 + standard FP32 VAE on cuda:0; seed 831001; 600 s ceiling; measured generation time 195.005 s. FLAC SHA256: `858aa9d681807d483ae316fb2ab0981b65fa78d40bb0f3a816095527b8725c91`.
+- Generation request lyrics/style differ from editable project defaults (project style is only a dot). README expandable details, player, lyrics.txt and style.txt use the exact generation request. README also has a settings table and full requested settings; standalone player includes effective runtime settings. Model paths remain original provenance, not portable installation paths.
+- Replaced `docs/demo/index.html` with a native audio player and expandable full details, no JS/dependencies. Added 192 kb/s `mehedi-rifat.mp3` as convenience audio. Removed prior City Lights audio and stale root config/report/score copies. Prior workflow screenshots retain their historical capture subjects; no screenshot regeneration requested.
+- Validation: source/copy file sets and SHA256 agree; original FLAC matches its manifest; Chrome plays the new MP3 and reports 365.878667 s, expands details and matches exact Bengali lyrics/style, no desktop horizontal overflow. FFprobe confirms stereo 48 kHz. Markdown/HTML links checked, API Settings defaults/local configuration 8080, Next rewrite default/override behavior checked, shell syntax and diff whitespace pass. No GPU inference rerun, no full application suite needed for default constants and static presentation.
+- **Runtime limitation:** external socket check found port 8080 occupied by nginx (401 response). Port 8000 belongs to an unrelated Image Generation App. No running studio API/worker was identified and no external service was stopped. Free port 8080 before launching this studio API. Configuration work is complete; no user decision remains for the demo.
+- Changed: `.env.example`, `.gitignore`, `README.md`, API Settings, `scripts/dev_api.sh`, web API client/Next config, `docs/demo/` and `CONTEXT.md`. No commit or push requested.
+
+## Previous task — playable demo added (2026-10-04)
 
 - Added native audio controls to README and the visual guide, using the existing MP3 without autoplay. Download links remain available.
 - Added `docs/demo/index.html`: a standalone, dependency-free player that opens locally in a browser when a Markdown viewer hides audio controls. Reuses the existing audio; no duplicate media or new generation.
